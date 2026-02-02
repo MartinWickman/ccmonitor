@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/martinwickman/ccmonitor/internal/session"
@@ -16,7 +17,7 @@ var (
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	countStyle = lipgloss.NewStyle().Faint(true)
 
-	projectStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	projectStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	projectPathStyle = lipgloss.NewStyle().Faint(true)
 
 	workingStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
@@ -25,11 +26,7 @@ var (
 	startingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
 	exitedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
 
-	sessionIDStyle = lipgloss.NewStyle().Faint(true)
-	detailStyle    = lipgloss.NewStyle()
-	promptStyle    = lipgloss.NewStyle().Faint(true).Italic(true)
-	timeStyle      = lipgloss.NewStyle().Faint(true)
-	connectorStyle = lipgloss.NewStyle().Faint(true)
+	promptStyle = lipgloss.NewStyle().Faint(true).Italic(true)
 
 	helpStyle = lipgloss.NewStyle().Faint(true).MarginTop(1)
 
@@ -38,6 +35,8 @@ var (
 			BorderForeground(lipgloss.Color("8")).
 			Padding(0, 1).
 			MarginTop(1)
+
+	summaryBarStyle = lipgloss.NewStyle().Faint(true).MarginTop(1)
 )
 
 // tickMsg is sent on every refresh interval.
@@ -53,19 +52,27 @@ func tickCmd() tea.Cmd {
 type Model struct {
 	sessionsDir string
 	sessions    []session.Session
+	spinner     spinner.Model
+	width       int
 }
 
 // New creates a new monitor model that reads from the given directory.
 func New(sessionsDir string) Model {
 	sessions, _ := session.LoadAll(sessionsDir)
+
+	s := spinner.New()
+	s.Spinner = spinner.MiniDot
+	s.Style = workingStyle
+
 	return Model{
 		sessionsDir: sessionsDir,
 		sessions:    sessions,
+		spinner:     s,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tickCmd()
+	return tea.Batch(tickCmd(), m.spinner.Tick)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -75,18 +82,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
 		return m, tickCmd()
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
 
 func (m Model) View() string {
-	return render(m.sessions)
+	return render(m.sessions, m.spinner, m.width)
 }
 
-func render(sessions []session.Session) string {
+func render(sessions []session.Session, sp spinner.Model, width int) string {
+	if width == 0 {
+		width = 80
+	}
+
 	if len(sessions) == 0 {
 		return titleStyle.Render("ccmonitor") + "\n\n" +
 			idleStyle.Render("No active sessions.") + "\n" +
@@ -95,6 +113,9 @@ func render(sessions []session.Session) string {
 
 	groups := session.GroupByProject(sessions)
 
+	// Box width accounts for border (2) and padding (2)
+	boxWidth := width - 4
+
 	var b strings.Builder
 
 	// Header
@@ -102,9 +123,15 @@ func render(sessions []session.Session) string {
 		countStyle.Render(fmt.Sprintf("%d projects, %d sessions", len(groups), len(sessions)))
 	b.WriteString(header + "\n")
 
+	// Summary bar
+	b.WriteString(summaryBarStyle.Render(renderSummary(sessions)))
+	b.WriteString("\n")
+
+	boxStyle := projectBoxStyle.Width(boxWidth)
+
 	for _, g := range groups {
-		box := renderProjectGroup(g)
-		b.WriteString(projectBoxStyle.Render(box) + "\n")
+		box := renderProjectGroup(g, sp)
+		b.WriteString(boxStyle.Render(box) + "\n")
 	}
 
 	b.WriteString(helpStyle.Render("Press q to quit."))
@@ -112,13 +139,53 @@ func render(sessions []session.Session) string {
 	return b.String()
 }
 
-func renderProjectGroup(g session.ProjectGroup) string {
+func renderSummary(sessions []session.Session) string {
+	counts := map[string]int{}
+	for _, s := range sessions {
+		counts[s.Status]++
+	}
+
+	var parts []string
+	if n := counts["working"]; n > 0 {
+		parts = append(parts, workingStyle.Render(fmt.Sprintf("● %d working", n)))
+	}
+	if n := counts["waiting"]; n > 0 {
+		parts = append(parts, waitingStyle.Render(fmt.Sprintf("◆ %d waiting", n)))
+	}
+	if n := counts["idle"]; n > 0 {
+		parts = append(parts, idleStyle.Render(fmt.Sprintf("○ %d idle", n)))
+	}
+	if n := counts["starting"]; n > 0 {
+		parts = append(parts, startingStyle.Render(fmt.Sprintf("◌ %d starting", n)))
+	}
+	if n := counts["exited"]; n > 0 {
+		parts = append(parts, exitedStyle.Render(fmt.Sprintf("✕ %d exited", n)))
+	}
+
+	return strings.Join(parts, "  ")
+}
+
+// sessionRow holds the data for one session table row plus its prompt.
+type sessionRow struct {
+	connector string
+	shortID   string
+	status    string
+	detail    string
+	elapsed   string
+	prompt    string
+	isLast    bool
+}
+
+func renderProjectGroup(g session.ProjectGroup, sp spinner.Model) string {
 	var b strings.Builder
 
 	dirName := filepath.Base(g.Project)
 	title := projectStyle.Render(dirName+"/") + " " + projectPathStyle.Render(g.Project)
 	b.WriteString(title + "\n")
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
+	// Collect rows
+	var rows []sessionRow
 	for i, s := range g.Sessions {
 		isLast := i == len(g.Sessions)-1
 		connector := "├─"
@@ -131,7 +198,7 @@ func renderProjectGroup(g session.ProjectGroup) string {
 			shortID = shortID[:8]
 		}
 
-		indicator, style, label := statusDisplay(s.Status)
+		indicator, style, label := statusDisplay(s.Status, sp)
 		elapsed := session.TimeSince(s.LastActivity)
 
 		detail := s.Detail
@@ -139,41 +206,72 @@ func renderProjectGroup(g session.ProjectGroup) string {
 			detail = detail[:37] + "..."
 		}
 
-		line := fmt.Sprintf("%s %s  %s  %-40s %s",
-			connectorStyle.Render(connector),
-			sessionIDStyle.Render(shortID),
-			style.Render(indicator+" "+label),
-			detailStyle.Render(detail),
-			timeStyle.Render(elapsed),
-		)
+		prompt := s.LastPrompt
+		if len(prompt) > 70 {
+			prompt = prompt[:67] + "..."
+		}
+
+		rows = append(rows, sessionRow{
+			connector: lipgloss.NewStyle().Faint(true).Render(connector),
+			shortID:   lipgloss.NewStyle().Faint(true).Render(shortID),
+			status:    style.Render(indicator + " " + label),
+			detail:    detail,
+			elapsed:   lipgloss.NewStyle().Faint(true).Render(elapsed),
+			prompt:    prompt,
+			isLast:    isLast,
+		})
+	}
+
+	// Calculate column widths across all rows for alignment.
+	// Status has a fixed minimum to prevent jitter from spinner animation.
+	connW, idW, detailW := 0, 0, 0
+	statusW := 12 // enough for "⣾ Working" / "◆ Waiting" etc.
+	for _, r := range rows {
+		connW = max(connW, lipgloss.Width(r.connector))
+		idW = max(idW, lipgloss.Width(r.shortID))
+		statusW = max(statusW, lipgloss.Width(r.status))
+		detailW = max(detailW, lipgloss.Width(r.detail))
+	}
+
+	for _, r := range rows {
+		line := padRight(r.connector, connW) + " " +
+			padRight(r.shortID, idW) + "  " +
+			padRight(r.status, statusW) + "  " +
+			padRight(r.detail, detailW) + "  " +
+			r.elapsed
 		b.WriteString(line + "\n")
 
-		if s.LastPrompt != "" {
-			indent := connectorStyle.Render("│") + "  "
-			if isLast {
+		if r.prompt != "" {
+			indent := lipgloss.NewStyle().Faint(true).Render("│") + "  "
+			if r.isLast {
 				indent = "   "
 			}
-			prompt := s.LastPrompt
-			if len(prompt) > 60 {
-				prompt = prompt[:57] + "..."
-			}
-			b.WriteString(indent + promptStyle.Render(prompt) + "\n")
+			b.WriteString(indent + promptStyle.Render(r.prompt) + "\n")
 		}
 	}
 
 	return b.String()
 }
 
-func statusDisplay(status string) (indicator string, style lipgloss.Style, label string) {
+// padRight pads a string (which may contain ANSI codes) to the given visible width.
+func padRight(s string, width int) string {
+	visible := lipgloss.Width(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
+}
+
+func statusDisplay(status string, sp spinner.Model) (indicator string, style lipgloss.Style, label string) {
 	switch status {
 	case "working":
-		return "●", workingStyle, "Working"
+		return sp.View(), workingStyle, "Working"
 	case "waiting":
 		return "◆", waitingStyle, "Waiting"
 	case "idle":
 		return "○", idleStyle, "Idle"
 	case "starting":
-		return "◌", startingStyle, "Starting"
+		return sp.View(), startingStyle, "Starting"
 	case "exited":
 		return "✕", exitedStyle, "Exited"
 	case "ended":
