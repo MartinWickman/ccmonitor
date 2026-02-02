@@ -1,0 +1,8 @@
+# Compiled binary
+ccmonitor
+
+# Swap files
+*.swp
+
+# IDE
+.idea/
