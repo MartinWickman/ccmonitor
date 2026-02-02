@@ -89,7 +89,11 @@ case "$EVENT" in
         ;;
     Notification)
         STATUS="waiting"
-        DETAIL="$NOTIFICATION_TYPE"
+        case "$NOTIFICATION_TYPE" in
+            idle_prompt)    DETAIL="Waiting for input" ;;
+            permission_prompt) DETAIL="Permission needed" ;;
+            *)              DETAIL="$NOTIFICATION_TYPE" ;;
+        esac
         ;;
     Stop)
         STATUS="idle"
