@@ -69,24 +69,11 @@ build_tool_detail() {
     esac
 }
 
-# Clean up stale session files (dead PIDs)
-cleanup_stale() {
-    for f in "$SESSIONS_DIR"/*.json; do
-        [ -f "$f" ] || continue
-        local pid
-        pid=$(jq -r '.pid // empty' "$f" 2>/dev/null) || continue
-        if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-            rm -f "$f"
-        fi
-    done
-}
-
 # Map event to status and detail
 case "$EVENT" in
     SessionStart)
         STATUS="starting"
         DETAIL="Session started"
-        cleanup_stale
         ;;
     UserPromptSubmit)
         STATUS="working"
@@ -109,7 +96,6 @@ case "$EVENT" in
         DETAIL="Finished responding"
         ;;
     SessionEnd)
-        cleanup_stale
         rm -f "$SESSION_FILE"
         exit 0
         ;;
