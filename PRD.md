@@ -70,15 +70,11 @@ The hook handler writes a status file per session to `~/.ccmonitor/sessions/<ses
 
 The `last_prompt` field is captured from the `UserPromptSubmit` hook and gives a rough indication of what the session is working on. It persists across tool calls until the user sends a new prompt.
 
-### Performance
-
-All hooks run synchronously. The hook handler does a single `jq` pipe and one atomic file write, which takes roughly 10-20ms. This is fast enough that async execution isn't worth the complexity.
-
-Async hooks can complete out of order, which creates race conditions with a single-file-per-session design. For example, an async `PostToolUse` hook could finish writing after a `Stop` hook, flipping the status back to "working" when the session is actually idle. Since the session file only holds the latest state (no history), correct ordering is essential — a stale write corrupts the current status. Synchronous execution guarantees hooks write in the order they fire. Each write includes a timestamp (`last_activity`) so the monitor can show time-since-last-activity and as a defensive check against out-of-order writes if the design changes in the future.
-
 ### Stale Session Detection
 
-The monitor checks whether each session's PID is still alive. If a process has died (e.g. terminal was closed), the session is shown as "exited" and automatically cleaned up after approximately 5 minutes.
+The monitor checks whether each session's PID is still alive. If a process has died (e.g. terminal was closed), the session is shown as "exited" in the display.
+
+Cleanup of stale session files is handled by the hook handler itself: the `SessionEnd` hook deletes its own session file and scans for other files with dead PIDs. The `SessionStart` hook does the same scan. This means crashed sessions get cleaned up the next time any Claude Code session starts or ends, with no daemon or manual intervention needed.
 
 ### Status File Integrity
 

@@ -1,0 +1,78 @@
+# Architecture
+
+## Components
+
+ccmonitor has two components that communicate through JSON files on disk:
+
+1. **Hook handler** (Bash + jq) — A script invoked by Claude Code hooks on lifecycle events. Reads JSON from stdin, writes a status file per session to `~/.ccmonitor/sessions/<session_id>.json`.
+
+2. **Monitor CLI** (Go) — A long-running process that reads the session files and renders a live-updating terminal display. Read-only — it never writes or deletes session files.
+
+A future GUI would be a third component reading the same session files.
+
+## Data flow
+
+```
+Claude Code hooks → Hook handler → Session files ← Monitor CLI
+                    (writes)         (JSON on disk)   (reads)
+```
+
+## Design decisions
+
+* All hooks are synchronous
+* One file per session, latest state only - Each hook event overwrites the session file with the current status. No history is kept. The monitor shows "right now", not what happened before.
+* Monitor is read-only - The monitor only reads session files. Hooks are responsible for creating and updating them. This means multiple monitors (CLI, future GUI) can run concurrently without conflicts. Stale session detection (dead PIDs) is displayed visually but the monitor does not delete files.
+* Session file cleanup - The `SessionEnd` hook deletes its own session file. It also scans for other stale session files (dead PIDs) and removes them. `SessionStart` does the same scan on startup. This means stale files from crashes get cleaned up the next time any session starts or ends — no daemon, no cron, no manual cleanup needed.
+* last_prompt for task context - The `UserPromptSubmit` hook captures the user's prompt text into a `last_prompt` field. This persists across tool calls until the user sends a new prompt, giving a rough indication of what the session is working on. A future enhancement could replace this with an AI-generated summary.
+
+## Session file schema
+
+```json
+{
+  "session_id": "abc123",
+  "project": "/home/user/myproject",
+  "status": "working",
+  "detail": "Edit src/main.py",
+  "last_prompt": "Write a book about Go programming",
+  "notification_type": null,
+  "last_activity": "2026-02-02T14:30:00Z",
+  "pid": 12345
+}
+```
+
+## Status model
+
+```
+starting → working ⇄ idle
+               ↓
+           waiting (needs input/permission)
+               ↓
+           working (after user responds)
+               ↓
+             ended
+```
+
+- **starting** — Session just began, no activity yet
+- **working** — Model is thinking, calling tools, or processing results
+- **idle** — Model finished responding, waiting for user's next prompt
+- **waiting** — Model needs user attention (permission dialog, idle prompt)
+- **ended** — Session terminated normally
+- **exited** — Process died without a clean SessionEnd (detected by PID check)
+
+## Hook → Status mapping
+
+| Hook Event         | Status    | Detail                                     |
+|--------------------|-----------|--------------------------------------------|
+| SessionStart       | starting  | "Session started"                          |
+| UserPromptSubmit   | working   | "Processing prompt..." + captures last_prompt |
+| PreToolUse         | working   | tool name + summary (e.g. "Edit src/x.py") |
+| PostToolUse        | working   | "Finished {tool}, continuing..."           |
+| Notification       | waiting   | notification_type                          |
+| Stop               | idle      | "Finished responding"                      |
+| SessionEnd         | ended     | "Session ended"                            |
+
+## Tech stack
+
+- **Hook handler**: Bash + jq — simple, no build step, no runtime dependency beyond jq
+- **Monitor CLI**: Go — compiles to a single binary, no runtime dependency for users
+- **Future GUI**: TBD — reads the same session files, independent of the CLI
