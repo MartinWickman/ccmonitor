@@ -127,10 +127,20 @@ func render(sessions []session.Session, sp spinner.Model, width int) string {
 	b.WriteString(summaryBarStyle.Render(renderSummary(sessions)))
 	b.WriteString("\n")
 
+	// Build rows for all groups and compute global column widths
+	groupRows := make([][]sessionRow, len(groups))
+	var allRows []sessionRow
+	for i, g := range groups {
+		rows := buildRows(g.Sessions, sp)
+		groupRows[i] = rows
+		allRows = append(allRows, rows...)
+	}
+	w := computeWidths(allRows)
+
 	boxStyle := projectBoxStyle.Width(boxWidth)
 
-	for _, g := range groups {
-		box := renderProjectGroup(g, sp)
+	for i, g := range groups {
+		box := renderProjectGroup(g, groupRows[i], w)
 		b.WriteString(boxStyle.Render(box) + "\n")
 	}
 
@@ -176,18 +186,16 @@ type sessionRow struct {
 	isLast    bool
 }
 
-func renderProjectGroup(g session.ProjectGroup, sp spinner.Model) string {
-	var b strings.Builder
+// columnWidths holds the computed widths for each column.
+type columnWidths struct {
+	conn, id, status, detail int
+}
 
-	dirName := filepath.Base(g.Project)
-	title := projectStyle.Render(dirName+"/") + " " + projectPathStyle.Render(g.Project)
-	b.WriteString(title + "\n")
-	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
-
-	// Collect rows
+// buildRows converts sessions into styled row data.
+func buildRows(sessions []session.Session, sp spinner.Model) []sessionRow {
 	var rows []sessionRow
-	for i, s := range g.Sessions {
-		isLast := i == len(g.Sessions)-1
+	for i, s := range sessions {
+		isLast := i == len(sessions)-1
 		connector := "├─"
 		if isLast {
 			connector = "└─"
@@ -221,23 +229,34 @@ func renderProjectGroup(g session.ProjectGroup, sp spinner.Model) string {
 			isLast:    isLast,
 		})
 	}
+	return rows
+}
 
-	// Calculate column widths across all rows for alignment.
-	// Status has a fixed minimum to prevent jitter from spinner animation.
-	connW, idW, detailW := 0, 0, 0
-	statusW := 12 // enough for "⣾ Working" / "◆ Waiting" etc.
-	for _, r := range rows {
-		connW = max(connW, lipgloss.Width(r.connector))
-		idW = max(idW, lipgloss.Width(r.shortID))
-		statusW = max(statusW, lipgloss.Width(r.status))
-		detailW = max(detailW, lipgloss.Width(r.detail))
+// computeWidths calculates column widths across all rows globally.
+func computeWidths(allRows []sessionRow) columnWidths {
+	w := columnWidths{status: 12} // fixed minimum to prevent spinner jitter
+	for _, r := range allRows {
+		w.conn = max(w.conn, lipgloss.Width(r.connector))
+		w.id = max(w.id, lipgloss.Width(r.shortID))
+		w.status = max(w.status, lipgloss.Width(r.status))
+		w.detail = max(w.detail, lipgloss.Width(r.detail))
 	}
+	return w
+}
+
+func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths) string {
+	var b strings.Builder
+
+	dirName := filepath.Base(g.Project)
+	title := projectStyle.Render(dirName+"/") + " " + projectPathStyle.Render(g.Project)
+	b.WriteString(title + "\n")
+	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
 	for _, r := range rows {
-		line := padRight(r.connector, connW) + " " +
-			padRight(r.shortID, idW) + "  " +
-			padRight(r.status, statusW) + "  " +
-			padRight(r.detail, detailW) + "  " +
+		line := padRight(r.connector, w.conn) + " " +
+			padRight(r.shortID, w.id) + "  " +
+			padRight(r.status, w.status) + "  " +
+			padRight(r.detail, w.detail) + "  " +
 			r.elapsed
 		b.WriteString(line + "\n")
 
