@@ -103,24 +103,44 @@ starting → working ⇄ idle
 
 ## Monitor Display
 
-The CLI monitor shows a live-updating view, refreshing every ~1 second:
+The CLI monitor shows a live-updating terminal view using Bubble Tea and Lip Gloss, refreshing every ~1 second. Each project is displayed in a rounded border box with tree-style session listing:
 
 ```
-ccmonitor                                  2 projects, 3 instances
+ccmonitor  2 projects, 4 sessions
 
- myproject/ (/home/user/myproject)
-  ├─ abc123  ● Working    Edit src/main.py         12s ago
-  └─ def456  ○ Waiting    Permission needed        2m ago
+╭──────────────────────────────────────────────────────────────╮
+│ myproject/ /home/user/myproject                              │
+│ ├─ abc12345  ● Working  Edit src/main.py              2m ago │
+│ │  Refactor the authentication module to use JWT tokens      │
+│ └─ def67890  ◆ Waiting  permission                    4m ago │
+│    Delete all temp files and rebuild the project             │
+╰──────────────────────────────────────────────────────────────╯
 
- webapp/ (/home/user/webapp)
-  └─ ghi789  ● Working    Bash npm test            5s ago
+╭──────────────────────────────────────────────────────────────╮
+│ webapp/ /home/user/webapp                                    │
+│ ├─ ghi11111  ● Working  Bash: npm test                2m ago │
+│ │  Run the test suite and fix any failures                   │
+│ └─ jkl22222  ○ Idle     Finished responding            7m ago │
+│    Add dark mode support to the settings page                │
+╰──────────────────────────────────────────────────────────────╯
+
+Press q to quit.
 ```
 
-Color coding:
+Color coding (via Lip Gloss):
 - Green: working
 - Yellow: waiting for input
 - Dim/gray: idle
+- Cyan: starting
 - Red: exited/dead
+
+Additional display features:
+- Last user prompt shown in italic below each session
+- Session IDs truncated to 8 characters
+- Detail text truncated to 40 characters
+- Relative timestamps (e.g. "2m ago", "now")
+- Alt-screen mode (restores terminal on exit)
+- Clean exit on q or Ctrl+C
 
 ## Distribution
 

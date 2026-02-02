@@ -1,0 +1,10 @@
+{
+  "session_id": "bae85a27-d6d5-41ba-8cdb-99c16cdfa802",
+  "project": "/mnt/c/Users/marti/AIstuff/ccmonitor",
+  "status": "waiting",
+  "detail": "permission_prompt",
+  "last_prompt": "updat the todo and prd files and commit all changes ",
+  "notification_type": "permission_prompt",
+  "last_activity": "2026-02-02T19:51:45Z",
+  "pid": 23799
+}

@@ -14,4 +14,5 @@ ccmonitor uses Claude Code hooks to collect status data from all running instanc
 
 - @PRD.md — Product requirements
 - @ARCHITECTURE.md — Architecture decisions, data flow, session file schema, tech stack
-- @TODO.md - Progress and what to do next
+- @TODO.md - Progress and what to do next. Update this as you progress
+- GO_BEST_PRACTICES.md - READ THIS WHEN WRITING GO PROGRAMMING LANGUAGE CODE

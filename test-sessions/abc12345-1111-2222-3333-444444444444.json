@@ -1,0 +1,10 @@
+{
+  "session_id": "abc12345-1111-2222-3333-444444444444",
+  "project": "/home/user/myproject",
+  "status": "working",
+  "detail": "Edit src/main.py",
+  "last_prompt": "Refactor the authentication module to use JWT tokens",
+  "notification_type": null,
+  "last_activity": "2026-02-02T18:45:09Z",
+  "pid": 12345
+}

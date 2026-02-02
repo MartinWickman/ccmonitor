@@ -1,18 +1,20 @@
 # Implementation Tasks
 
+Update this as you progress
+
 ## Task order
 
 Tasks 2 and 3 can be done in parallel after 1. Task 4 depends on 3, task 5 depends on 2, and task 6 depends on everything else.
 
 ## Tasks
 
-- [ ] **1. Scaffold the Go project** — Initialize Go module, create directory structure, set up basic project layout with main entry points and shared constants (session dir path, CCMONITOR_SESSIONS_DIR env var override).
+- [x] **1. Scaffold the Go project** — Initialize Go module (`github.com/martinwickman/ccmonitor`), create directory structure (`cmd/ccmonitor/`, `internal/session/`, `internal/monitor/`), set up basic main entry point and session reader. Compiles and runs against real session files.
 
-- [ ] **2. Implement the hook handler bash script** — Read JSON from stdin, map hook events to statuses, capture last_prompt from UserPromptSubmit, write session JSON file. Include stale session cleanup on SessionStart and SessionEnd (scan for dead PIDs, remove their files). Delete own session file on SessionEnd. Support CCMONITOR_SESSIONS_DIR env var.
+- [x] **2. Implement the hook handler bash script** — Read JSON from stdin, map hook events to statuses, capture last_prompt from UserPromptSubmit, write session JSON file. Delete own session file on SessionEnd. Support CCMONITOR_SESSIONS_DIR env var. Note: stale session cleanup was removed — PID-based detection was unreliable (PPID captures ephemeral process, not Claude Code). Stale detection to be revisited later.
 
-- [ ] **3. Implement the session file reader in Go** — Read all session JSON files from the sessions directory, parse them, check PID liveness, return a structured list of sessions grouped by project. Handle JSON parse errors gracefully (skip corrupt files). Support CCMONITOR_SESSIONS_DIR env var.
+- [~] **3. Implement the session file reader in Go** — Reader done: loads all JSON files, parses into Session structs, skips corrupt files, supports CCMONITOR_SESSIONS_DIR. Grouping by project done (`GroupByProject`, `TimeSince`). Still needed: PID liveness checks (pending reliable PID strategy).
 
-- [ ] **4. Implement the monitor CLI display** — Live-updating terminal view of all sessions grouped by project. Color coding: green=working, yellow=waiting, dim=idle, red=exited. Show tool detail, last_prompt, time since last activity. Auto-refresh every ~1 second. Handle empty state. Clean exit on Ctrl+C.
+- [x] **4. Implement the monitor CLI display** — Live-updating Bubble Tea TUI. Sessions grouped by project in rounded border boxes. Color coding via Lip Gloss (green=working, yellow=waiting, dim=idle, cyan=starting, red=exited). Tree-style connectors, truncated detail/prompt, italic last_prompt, relative timestamps. Auto-refresh every 1 second. Clean exit on q/Ctrl+C. Handles empty state. Uses alt-screen mode.
 
 - [ ] **5. Build the installer command** — Add hook configuration to Claude Code settings file, merging with existing hooks. Create sessions directory. For dev: target .claude/settings.local.json. For production: target ~/.claude/settings.json. Include uninstall option.
 
