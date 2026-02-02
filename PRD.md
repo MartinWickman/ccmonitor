@@ -61,15 +61,20 @@ The hook handler writes a status file per session to `~/.ccmonitor/sessions/<ses
   "project": "/home/user/myproject",
   "status": "working",
   "detail": "Edit src/main.py",
+  "last_prompt": "Write a book about Go programming",
   "notification_type": null,
   "last_activity": "2026-02-02T14:30:00Z",
   "pid": 12345
 }
 ```
 
+The `last_prompt` field is captured from the `UserPromptSubmit` hook and gives a rough indication of what the session is working on. It persists across tool calls until the user sends a new prompt.
+
 ### Performance
 
-Tool-related hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`) run asynchronously so they don't add latency to Claude Code's operation. Lifecycle hooks (`SessionStart`, `Stop`, `SessionEnd`, `Notification`) run synchronously since they're not in the hot path.
+All hooks run synchronously. The hook handler does a single `jq` pipe and one atomic file write, which takes roughly 10-20ms. This is fast enough that async execution isn't worth the complexity.
+
+Async hooks can complete out of order, which creates race conditions with a single-file-per-session design. For example, an async `PostToolUse` hook could finish writing after a `Stop` hook, flipping the status back to "working" when the session is actually idle. Since the session file only holds the latest state (no history), correct ordering is essential — a stale write corrupts the current status. Synchronous execution guarantees hooks write in the order they fire. Each write includes a timestamp (`last_activity`) so the monitor can show time-since-last-activity and as a defensive check against out-of-order writes if the design changes in the future.
 
 ### Stale Session Detection
 
@@ -77,7 +82,7 @@ The monitor checks whether each session's PID is still alive. If a process has d
 
 ### Status File Integrity
 
-Status files are written atomically (write to temp file, then rename) to prevent the monitor from reading partial/corrupt JSON.
+The hook handler writes directly to the session file. The monitor must handle JSON parse errors gracefully (skip and retry on the next cycle) in the unlikely event of a read during a write.
 
 ## Status Model
 
@@ -149,6 +154,11 @@ These are not in scope for the initial version but inform the architecture:
 - Web dashboard or Electron app reading the same status files
 - Richer visualization: timeline of activity, resource usage
 - The file-based status approach makes this straightforward — any program can read the JSON files
+
+### Task Summarization
+- Replace the raw `last_prompt` with an AI-generated summary of the current task using a `type: "prompt"` hook on `UserPromptSubmit` or `Stop`
+- A fast model (e.g. Haiku) reads the conversation context and produces a ~10 word summary like "Writing chapter 4 of Go book"
+- Updates as the session progresses through subtasks, not just when the user sends a new prompt
 
 ### Richer Status Data
 - Track token usage per session
