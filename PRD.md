@@ -1,0 +1,161 @@
+# ccmonitor — Claude Code Instance Monitor
+
+## Problem
+
+When running multiple Claude Code instances simultaneously — across different projects, in different terminal tabs — it's difficult to know what each instance is doing. You have to manually switch between tabs to check if an instance is:
+
+- Actively working (thinking, calling tools)
+- Waiting for input (permission prompt, idle)
+- Finished and idle
+- Crashed or exited
+
+This becomes increasingly painful as the number of concurrent instances grows.
+
+## Requirements
+
+- See all Claude Code instances in a single view — no tab-switching
+- Instances grouped by project directory
+- Each instance shows its current status: working, waiting for input, idle
+- See what each instance is doing: which tool, what file/command
+- Show time since last activity to spot stuck or forgotten sessions
+- Automatically detect and flag dead/crashed instances
+- Live-updating display, no manual refresh
+- Zero noticeable performance impact on Claude Code
+
+### Future (out of scope for v1)
+
+- Send prompts to waiting instances directly from the monitor
+- Desktop notifications when an instance needs attention
+- Graphical dashboard beyond the terminal
+
+## Solution
+
+ccmonitor is a monitoring tool that provides a single view of all running Claude Code instances, grouped by project. It consists of two parts:
+
+1. **Hook-based data collection** — Claude Code hooks fire on lifecycle events (tool use, prompts, notifications, stop). A hook handler script writes the current status of each session to a shared directory.
+2. **Monitor display** — A CLI program reads the status files and renders a live-updating view showing all instances and their current state.
+
+## How It Works
+
+### Data Collection via Hooks
+
+Claude Code supports user-defined hooks that execute at specific lifecycle points. The following hooks are used to track instance state:
+
+| Hook Event         | Triggers When                          | Status Set     |
+|--------------------|----------------------------------------|----------------|
+| `SessionStart`     | A Claude Code session begins           | `starting`     |
+| `UserPromptSubmit` | User sends a prompt                    | `working`      |
+| `PreToolUse`       | Model is about to call a tool          | `working`      |
+| `PostToolUse`      | A tool call completed                  | `working`      |
+| `Notification`     | Claude needs user attention            | `waiting`      |
+| `Stop`             | Model finished responding              | `idle`         |
+| `SessionEnd`       | Session terminates                     | `ended`        |
+
+Each hook invocation receives JSON on stdin containing `session_id`, `cwd` (project directory), `hook_event_name`, and event-specific fields like `tool_name` and `tool_input`.
+
+The hook handler writes a status file per session to `~/.ccmonitor/sessions/<session_id>.json`:
+
+```json
+{
+  "session_id": "abc123",
+  "project": "/home/user/myproject",
+  "status": "working",
+  "detail": "Edit src/main.py",
+  "notification_type": null,
+  "last_activity": "2026-02-02T14:30:00Z",
+  "pid": 12345
+}
+```
+
+### Performance
+
+Tool-related hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`) run asynchronously so they don't add latency to Claude Code's operation. Lifecycle hooks (`SessionStart`, `Stop`, `SessionEnd`, `Notification`) run synchronously since they're not in the hot path.
+
+### Stale Session Detection
+
+The monitor checks whether each session's PID is still alive. If a process has died (e.g. terminal was closed), the session is shown as "exited" and automatically cleaned up after approximately 5 minutes.
+
+### Status File Integrity
+
+Status files are written atomically (write to temp file, then rename) to prevent the monitor from reading partial/corrupt JSON.
+
+## Status Model
+
+An instance moves through these states:
+
+```
+starting → working ⇄ idle
+               ↓
+           waiting (needs input/permission)
+               ↓
+           working (after user responds)
+               ↓
+             ended
+```
+
+- **starting** — Session just began, no activity yet
+- **working** — Model is thinking, calling tools, or processing results
+- **idle** — Model finished responding, waiting for user's next prompt
+- **waiting** — Model needs user attention (permission dialog, idle prompt, etc.)
+- **ended** — Session terminated normally
+- **exited** — Process died without a clean SessionEnd (detected by PID check)
+
+## Monitor Display
+
+The CLI monitor shows a live-updating view, refreshing every ~1 second:
+
+```
+ccmonitor                                  2 projects, 3 instances
+
+ myproject/ (/home/user/myproject)
+  ├─ abc123  ● Working    Edit src/main.py         12s ago
+  └─ def456  ○ Waiting    Permission needed        2m ago
+
+ webapp/ (/home/user/webapp)
+  └─ ghi789  ● Working    Bash npm test            5s ago
+```
+
+Color coding:
+- Green: working
+- Yellow: waiting for input
+- Dim/gray: idle
+- Red: exited/dead
+
+## Distribution
+
+The project will be open source on GitHub, packaged for easy installation by any developer. Installation should:
+
+1. Install the hook handler and monitor as CLI commands
+2. Add hook configuration to `~/.claude/settings.json` (merging with existing hooks, not overwriting)
+3. Create the `~/.ccmonitor/sessions/` directory
+
+An uninstall command should cleanly remove the hooks from settings and optionally remove the sessions directory.
+
+The packaging approach depends on the chosen tech stack:
+- **Python**: publish to PyPI, install via `pip install ccmonitor` or `pipx install ccmonitor`
+- **Go**: single binary, distribute via GitHub releases and `go install`
+- **Node/TypeScript**: publish to npm, install via `npm install -g ccmonitor`
+
+## Future Directions
+
+These are not in scope for the initial version but inform the architecture:
+
+### Interactive Control
+- Send prompts to waiting instances directly from the monitor
+- Approve/deny permission requests from the monitor
+- Requires interfacing with Claude Code's stdin/IPC (significant complexity)
+
+### GUI Version
+- Web dashboard or Electron app reading the same status files
+- Richer visualization: timeline of activity, resource usage
+- The file-based status approach makes this straightforward — any program can read the JSON files
+
+### Richer Status Data
+- Track token usage per session
+- Track cumulative tool calls
+- Show the model's last text output summary
+- Session duration and cost estimation
+
+### Notifications
+- Desktop notifications when any instance transitions to "waiting"
+- Configurable alert rules (e.g. notify if any instance has been idle for >5 minutes)
