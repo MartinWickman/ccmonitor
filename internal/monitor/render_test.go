@@ -1,0 +1,121 @@
+package monitor
+
+import (
+	"testing"
+	"time"
+
+	"github.com/martinwickman/ccmonitor/internal/session"
+)
+
+func TestPadRight(t *testing.T) {
+	t.Run("string shorter than width should be padded with spaces", func(t *testing.T) {
+		got := padRight("hi", 5)
+		if got != "hi   " {
+			t.Errorf("got %q, want %q", got, "hi   ")
+		}
+	})
+
+	t.Run("string equal to width should not be padded", func(t *testing.T) {
+		got := padRight("hello", 5)
+		if got != "hello" {
+			t.Errorf("got %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("string longer than width should be returned unchanged", func(t *testing.T) {
+		got := padRight("hello world", 5)
+		if got != "hello world" {
+			t.Errorf("got %q, want %q", got, "hello world")
+		}
+	})
+}
+
+func TestFlashPhase(t *testing.T) {
+	t.Run("zero until time should return no flash", func(t *testing.T) {
+		got := flashPhase(time.Now(), time.Time{})
+		if got != 0 {
+			t.Errorf("got %d, want 0", got)
+		}
+	})
+
+	t.Run("expired flash should return no flash", func(t *testing.T) {
+		now := time.Now()
+		until := now.Add(-1 * time.Second)
+		got := flashPhase(now, until)
+		if got != 0 {
+			t.Errorf("got %d, want 0", got)
+		}
+	})
+
+	t.Run("active flash should return 1 or 2", func(t *testing.T) {
+		now := time.Now()
+		until := now.Add(1 * time.Second)
+		got := flashPhase(now, until)
+		if got != 1 && got != 2 {
+			t.Errorf("got %d, want 1 or 2", got)
+		}
+	})
+}
+
+func TestBuildClickMap(t *testing.T) {
+	t.Run("empty sessions should return empty map", func(t *testing.T) {
+		got := buildClickMap(nil, "some view\ncontent\n")
+		if len(got) != 0 {
+			t.Errorf("got %d entries, want 0", len(got))
+		}
+	})
+
+	t.Run("line containing session ID should be mapped", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "abcd1234-full-id", Project: "/p"},
+		}
+		view := "header\nsummary\n├─ abcd1234  Working\n"
+		got := buildClickMap(sessions, view)
+		if got[2] != "abcd1234-full-id" {
+			t.Errorf("line 2: got %q, want %q", got[2], "abcd1234-full-id")
+		}
+	})
+
+	t.Run("line after session row should be mapped as prompt line", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "abcd1234-full-id", Project: "/p"},
+		}
+		view := "header\n├─ abcd1234  Working\n   Fix the bug\nfooter\n"
+		got := buildClickMap(sessions, view)
+		if got[1] != "abcd1234-full-id" {
+			t.Errorf("session row line 1: got %q, want %q", got[1], "abcd1234-full-id")
+		}
+		if got[2] != "abcd1234-full-id" {
+			t.Errorf("prompt line 2: got %q, want %q", got[2], "abcd1234-full-id")
+		}
+	})
+
+	t.Run("consecutive session rows should not bleed into each other", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "aaaaaaaa-1111", Project: "/p"},
+			{SessionID: "bbbbbbbb-2222", Project: "/p"},
+		}
+		view := "header\n├─ aaaaaaaa  Working\n└─ bbbbbbbb  Idle\nfooter\n"
+		got := buildClickMap(sessions, view)
+		if got[1] != "aaaaaaaa-1111" {
+			t.Errorf("line 1: got %q, want %q", got[1], "aaaaaaaa-1111")
+		}
+		if got[2] != "bbbbbbbb-2222" {
+			t.Errorf("line 2: got %q, want %q", got[2], "bbbbbbbb-2222")
+		}
+	})
+
+	t.Run("lines without any session ID should not be mapped", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "abcd1234-full-id", Project: "/p"},
+		}
+		view := "header line\nproject title\n├─ abcd1234  Working\n"
+		got := buildClickMap(sessions, view)
+		if _, ok := got[0]; ok {
+			t.Errorf("header line should not be mapped")
+		}
+		if _, ok := got[1]; ok {
+			t.Errorf("project title should not be mapped")
+		}
+	})
+}
