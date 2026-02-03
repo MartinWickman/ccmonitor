@@ -21,6 +21,7 @@ This becomes increasingly painful as the number of concurrent instances grows.
 - Automatically detect and flag dead/crashed instances
 - Live-updating display, no manual refresh
 - Zero noticeable performance impact on Claude Code
+- Support for clicking to the relevant Tmux pane
 
 ### Future (out of scope for v1)
 

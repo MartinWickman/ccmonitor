@@ -12,7 +12,7 @@ import (
 func main() {
 	dir := session.Dir()
 
-	p := tea.NewProgram(monitor.New(dir), tea.WithAltScreen())
+	p := tea.NewProgram(monitor.New(dir), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

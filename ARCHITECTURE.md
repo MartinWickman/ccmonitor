@@ -36,9 +36,12 @@ Claude Code hooks → Hook handler → Session files ← Monitor CLI
   "last_prompt": "Write a book about Go programming",
   "notification_type": null,
   "last_activity": "2026-02-02T14:30:00Z",
-  "pid": 12345
+  "pid": 12345,
+  "tmux_pane": "%3"
 }
 ```
+
+The `tmux_pane` field is captured from the `$TMUX_PANE` environment variable when the hook runs inside tmux. It is empty when not using tmux. The monitor uses this to switch focus to the correct pane on click.
 
 ## Status model
 

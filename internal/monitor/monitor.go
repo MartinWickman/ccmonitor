@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/martinwickman/ccmonitor/internal/session"
+	"github.com/martinwickman/ccmonitor/internal/switcher"
 )
 
 // Styles
@@ -69,6 +70,12 @@ type Model struct {
 	lastState map[string]string
 	// flashUntil tracks when the flash expires per session ID.
 	flashUntil map[string]time.Time
+	// clickMap maps Y line number to session ID for mouse click handling.
+	clickMap map[int]string
+	// statusMsg is feedback text shown after a click action.
+	statusMsg string
+	// statusUntil is when to clear the status message.
+	statusUntil time.Time
 }
 
 // New creates a new monitor model that reads from the given directory.
@@ -102,8 +109,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		return m, nil
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if sid, ok := m.clickMap[msg.Y]; ok {
+				// Find the session to get tmux pane
+				for _, s := range m.sessions {
+					if s.SessionID == sid {
+						shortID := sid
+						if len(shortID) > 8 {
+							shortID = shortID[:8]
+						}
+						if err := switcher.Switch(s.TmuxPane); err != nil {
+							m.statusMsg = fmt.Sprintf("Error: %v", err)
+						} else {
+							m.statusMsg = fmt.Sprintf("Switched to %s", shortID)
+						}
+						m.statusUntil = time.Now().Add(3 * time.Second)
+						break
+					}
+				}
+			}
+		}
+		return m, nil
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
+		// Build click map by scanning the actual rendered view for session IDs.
+		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "")
+		m.clickMap = buildClickMap(m.sessions, view)
 		now := time.Now()
 		newFlash := false
 		for _, s := range m.sessions {
@@ -143,10 +175,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	return render(m.sessions, m.spinner, m.width, m.flashUntil)
+	var status string
+	if m.statusMsg != "" && time.Now().Before(m.statusUntil) {
+		status = m.statusMsg
+	}
+	return render(m.sessions, m.spinner, m.width, m.flashUntil, status)
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time) string {
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string) string {
 	if width == 0 {
 		width = 80
 	}
@@ -154,7 +190,7 @@ func render(sessions []session.Session, sp spinner.Model, width int, flashUntil 
 	if len(sessions) == 0 {
 		return titleStyle.Render("ccmonitor") + "\n\n" +
 			idleStyle.Render("No active sessions.") + "\n" +
-			helpStyle.Render("Press q to quit.")
+			helpStyle.Render("Press q to quit. Click a session to switch tmux pane.")
 	}
 
 	groups := session.GroupByProject(sessions)
@@ -190,7 +226,11 @@ func render(sessions []session.Session, sp spinner.Model, width int, flashUntil 
 		b.WriteString(boxStyle.Render(box) + "\n")
 	}
 
-	b.WriteString(helpStyle.Render("Press q to quit."))
+	if statusMsg != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(statusMsg) + "\n")
+	}
+
+	b.WriteString(helpStyle.Render("Press q to quit. Click a session to switch tmux pane."))
 
 	return b.String()
 }
@@ -358,6 +398,56 @@ func flashPhase(now time.Time, until time.Time) int {
 		return 1 // on
 	}
 	return 2 // off
+}
+
+// buildClickMap scans the rendered view for truncated session IDs and maps
+// their Y line numbers to full session IDs. This approach is immune to
+// layout changes (margins, borders, padding) since it matches actual content.
+func buildClickMap(sessions []session.Session, view string) map[int]string {
+	clickMap := make(map[int]string)
+	if len(sessions) == 0 {
+		return clickMap
+	}
+
+	// Build a lookup from truncated ID → full session ID.
+	shortToFull := make(map[string]string, len(sessions))
+	for _, s := range sessions {
+		short := s.SessionID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		shortToFull[short] = s.SessionID
+	}
+
+	lines := strings.Split(view, "\n")
+	for y, line := range lines {
+		for short, full := range shortToFull {
+			if strings.Contains(line, short) {
+				clickMap[y] = full
+				// Also map the prompt line directly below, if it exists and
+				// isn't already mapped to a different session.
+				if y+1 < len(lines) {
+					if _, taken := clickMap[y+1]; !taken {
+						// Only map if the next line doesn't contain any session ID
+						// (which would mean it's another session row, not a prompt).
+						isSessionRow := false
+						for s := range shortToFull {
+							if strings.Contains(lines[y+1], s) {
+								isSessionRow = true
+								break
+							}
+						}
+						if !isSessionRow {
+							clickMap[y+1] = full
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return clickMap
 }
 
 func statusDisplay(status string, sp spinner.Model) (indicator string, style lipgloss.Style, label string) {

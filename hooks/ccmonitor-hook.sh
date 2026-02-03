@@ -20,6 +20,7 @@ TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // empty')
 NOTIFICATION_TYPE=$(echo "$INPUT" | jq -r '.notification_type // empty')
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
+TMUX_PANE_VAL="${TMUX_PANE:-}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 SESSION_FILE="$SESSIONS_DIR/$SESSION_ID.json"
@@ -126,6 +127,7 @@ jq -n \
     --arg notification_type "$NOTIFICATION_TYPE" \
     --arg ts "$TIMESTAMP" \
     --argjson pid "${PPID:-0}" \
+    --arg tmux_pane "$TMUX_PANE_VAL" \
     '{
         session_id: $sid,
         project: $proj,
@@ -134,5 +136,6 @@ jq -n \
         last_prompt: $last_prompt,
         notification_type: (if $notification_type == "" then null else $notification_type end),
         last_activity: $ts,
-        pid: $pid
+        pid: $pid,
+        tmux_pane: $tmux_pane
     }' > "$SESSION_FILE"

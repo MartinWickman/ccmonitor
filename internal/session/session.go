@@ -19,6 +19,7 @@ type Session struct {
 	NotificationType *string `json:"notification_type"`
 	LastActivity     string  `json:"last_activity"`
 	PID              int     `json:"pid"`
+	TmuxPane         string  `json:"tmux_pane"`
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.
