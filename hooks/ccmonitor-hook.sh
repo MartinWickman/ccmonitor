@@ -91,7 +91,7 @@ case "$EVENT" in
         STATUS="waiting"
         case "$NOTIFICATION_TYPE" in
             idle_prompt)    DETAIL="Waiting for input" ;;
-            permission_prompt) DETAIL="Permission needed" ;;
+            permission_prompt) DETAIL="Awaiting response" ;;
             *)              DETAIL="$NOTIFICATION_TYPE" ;;
         esac
         ;;
