@@ -459,7 +459,7 @@ func statusDisplay(status string, sp spinner.Model) (indicator string, style lip
 	case "idle":
 		return "○", idleStyle, "Idle"
 	case "starting":
-		return sp.View(), startingStyle, "Starting"
+		return "◌", startingStyle, "Started"
 	case "exited":
 		return "✕", exitedStyle, "Exited"
 	case "ended":
