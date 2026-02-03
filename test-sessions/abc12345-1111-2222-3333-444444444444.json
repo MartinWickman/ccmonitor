@@ -3,7 +3,7 @@
   "project": "/home/user/myproject",
   "status": "working",
   "detail": "Edit src/main.py",
-  "last_prompt": "RRefactor the authentication module to use JWT tokens",
+  "last_prompt": "Refactor the authentication module to use JWT tokens",
   "notification_type": null,
   "last_activity": "2026-02-02T19:40:09Z",
   "pid": 12345

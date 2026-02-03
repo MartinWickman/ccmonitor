@@ -29,15 +29,29 @@ type columnWidths struct {
 	conn, id, status, detail int
 }
 
+// RenderOnce produces a single snapshot of the current sessions for non-interactive output.
+func RenderOnce(sessions []session.Session, width int) string {
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	return renderView(sessions, sp, width, nil, "", false)
+}
+
 func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string) string {
+	return renderView(sessions, sp, width, flashUntil, statusMsg, true)
+}
+
+func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool) string {
 	if width == 0 {
 		width = 80
 	}
 
 	if len(sessions) == 0 {
-		return titleStyle.Render("ccmonitor") + "\n\n" +
-			idleStyle.Render("No active sessions.") + "\n" +
-			helpStyle.Render("Press q to quit. Click a session to switch tmux pane.")
+		s := titleStyle.Render("ccmonitor") + "\n\n" +
+			idleStyle.Render("No active sessions.")
+		if interactive {
+			s += "\n" + helpStyle.Render("Press q to quit. Click a session to switch tmux pane.")
+		}
+		return s
 	}
 
 	groups := session.GroupByProject(sessions)
@@ -73,11 +87,12 @@ func render(sessions []session.Session, sp spinner.Model, width int, flashUntil 
 		b.WriteString(boxStyle.Render(box) + "\n")
 	}
 
-	if statusMsg != "" {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(statusMsg) + "\n")
+	if interactive {
+		if statusMsg != "" {
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(statusMsg) + "\n")
+		}
+		b.WriteString(helpStyle.Render("Press q to quit. Click a session to switch tmux pane."))
 	}
-
-	b.WriteString(helpStyle.Render("Press q to quit. Click a session to switch tmux pane."))
 
 	return b.String()
 }
