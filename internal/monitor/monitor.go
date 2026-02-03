@@ -39,8 +39,11 @@ var (
 	summaryBarStyle = lipgloss.NewStyle().Faint(true).MarginTop(1)
 )
 
-// tickMsg is sent on every refresh interval.
+// tickMsg is sent on every refresh interval (session reload).
 type tickMsg time.Time
+
+// flashTickMsg is sent on a faster interval for smooth flash animation.
+type flashTickMsg time.Time
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -48,12 +51,24 @@ func tickCmd() tea.Cmd {
 	})
 }
 
+func flashTickCmd() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return flashTickMsg(t)
+	})
+}
+
+const flashDuration = 2 * time.Second
+
 // Model holds the state for the Bubble Tea program.
 type Model struct {
 	sessionsDir string
 	sessions    []session.Session
 	spinner     spinner.Model
 	width       int
+	// lastState tracks the last known status+detail per session ID for change detection.
+	lastState map[string]string
+	// flashUntil tracks when the flash expires per session ID.
+	flashUntil map[string]time.Time
 }
 
 // New creates a new monitor model that reads from the given directory.
@@ -65,14 +80,16 @@ func New(sessionsDir string) Model {
 	s.Style = workingStyle
 
 	return Model{
-		sessionsDir: sessionsDir,
-		sessions:    sessions,
-		spinner:     s,
+		sessionsDir:  sessionsDir,
+		sessions:     sessions,
+		spinner:      s,
+		lastState: map[string]string{},
+		flashUntil:   map[string]time.Time{},
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(), m.spinner.Tick)
+	return tea.Batch(tickCmd(), flashTickCmd(), m.spinner.Tick)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -87,7 +104,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
-		return m, tickCmd()
+		now := time.Now()
+		newFlash := false
+		for _, s := range m.sessions {
+			state := s.Status + "|" + s.Detail
+			prev, known := m.lastState[s.SessionID]
+			if known && prev != state {
+				m.flashUntil[s.SessionID] = now.Add(flashDuration)
+				newFlash = true
+			}
+			m.lastState[s.SessionID] = state
+		}
+		cmds := []tea.Cmd{tickCmd()}
+		if newFlash {
+			cmds = append(cmds, flashTickCmd())
+		}
+		return m, tea.Batch(cmds...)
+	case flashTickMsg:
+		// Re-render to update flash animation; only keep ticking if flashes are active
+		hasFlash := false
+		now := time.Now()
+		for _, until := range m.flashUntil {
+			if now.Before(until) {
+				hasFlash = true
+				break
+			}
+		}
+		if hasFlash {
+			return m, flashTickCmd()
+		}
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -97,10 +143,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	return render(m.sessions, m.spinner, m.width)
+	return render(m.sessions, m.spinner, m.width, m.flashUntil)
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int) string {
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time) string {
 	if width == 0 {
 		width = 80
 	}
@@ -131,7 +177,7 @@ func render(sessions []session.Session, sp spinner.Model, width int) string {
 	groupRows := make([][]sessionRow, len(groups))
 	var allRows []sessionRow
 	for i, g := range groups {
-		rows := buildRows(g.Sessions, sp)
+		rows := buildRows(g.Sessions, sp, flashUntil)
 		groupRows[i] = rows
 		allRows = append(allRows, rows...)
 	}
@@ -177,13 +223,15 @@ func renderSummary(sessions []session.Session) string {
 
 // sessionRow holds the data for one session table row plus its prompt.
 type sessionRow struct {
-	connector string
-	shortID   string
-	status    string
-	detail    string
-	elapsed   string
-	prompt    string
-	isLast    bool
+	connector       string
+	shortID         string
+	status          string
+	detail          string
+	elapsed         string
+	rawLastActivity string
+	prompt          string
+	isLast          bool
+	flashPhase      int // 0=none, 1=brightest ... 10=dimmest
 }
 
 // columnWidths holds the computed widths for each column.
@@ -192,7 +240,8 @@ type columnWidths struct {
 }
 
 // buildRows converts sessions into styled row data.
-func buildRows(sessions []session.Session, sp spinner.Model) []sessionRow {
+func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []sessionRow {
+	now := time.Now()
 	var rows []sessionRow
 	for i, s := range sessions {
 		isLast := i == len(sessions)-1
@@ -219,14 +268,18 @@ func buildRows(sessions []session.Session, sp spinner.Model) []sessionRow {
 			prompt = prompt[:67] + "..."
 		}
 
+		phase := flashPhase(now, flashUntil[s.SessionID])
+
 		rows = append(rows, sessionRow{
-			connector: lipgloss.NewStyle().Faint(true).Render(connector),
-			shortID:   lipgloss.NewStyle().Faint(true).Render(shortID),
-			status:    style.Render(indicator + " " + label),
-			detail:    detail,
-			elapsed:   lipgloss.NewStyle().Faint(true).Render(elapsed),
-			prompt:    prompt,
-			isLast:    isLast,
+			connector:       lipgloss.NewStyle().Faint(true).Render(connector),
+			shortID:         lipgloss.NewStyle().Faint(true).Render(shortID),
+			status:          style.Render(indicator + " " + label),
+			detail:          detail,
+			elapsed:         lipgloss.NewStyle().Faint(true).Render(elapsed),
+			rawLastActivity: s.LastActivity,
+			prompt:          prompt,
+			isLast:          isLast,
+			flashPhase:      phase,
 		})
 	}
 	return rows
@@ -253,11 +306,22 @@ func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidth
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
 	for _, r := range rows {
+		elapsed := r.elapsed
+		if r.flashPhase == 1 {
+			elapsed = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")). // bright red
+				Bold(true).
+				Render(session.TimeSince(r.rawLastActivity))
+		} else if r.flashPhase == 2 {
+			elapsed = lipgloss.NewStyle().Faint(true).
+				Render(session.TimeSince(r.rawLastActivity))
+		}
+
 		line := padRight(r.connector, w.conn) + " " +
 			padRight(r.shortID, w.id) + "  " +
 			padRight(r.status, w.status) + "  " +
 			padRight(r.detail, w.detail) + "  " +
-			r.elapsed
+			elapsed
 		b.WriteString(line + "\n")
 
 		if r.prompt != "" {
@@ -279,6 +343,21 @@ func padRight(s string, width int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", width-visible)
+}
+
+// flashPhase returns whether the flash is currently "on" (visible) or "off".
+// Returns 0=no flash, 1=on, 2=off (blinking cycle).
+func flashPhase(now time.Time, until time.Time) int {
+	if until.IsZero() || !now.Before(until) {
+		return 0
+	}
+	// Toggle every 150ms
+	elapsed := flashDuration - until.Sub(now)
+	cycle := int(elapsed.Milliseconds() / 150)
+	if cycle%2 == 0 {
+		return 1 // on
+	}
+	return 2 // off
 }
 
 func statusDisplay(status string, sp spinner.Model) (indicator string, style lipgloss.Style, label string) {
