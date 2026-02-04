@@ -21,9 +21,11 @@ type hookInput struct {
 	ToolInput        json.RawMessage `json:"tool_input"`
 	NotificationType string          `json:"notification_type"`
 	Prompt           string          `json:"prompt"`
+	Message          string          `json:"message"`
+	Title            string          `json:"title"`
 }
 
-func mapEvent(event, toolDetail, notifType string) (status, detail string) {
+func mapEvent(event, toolDetail, notifType, title, message string) (status, detail string) {
 	switch event {
 	case "SessionStart":
 		return "starting", "Session started"
@@ -34,7 +36,7 @@ func mapEvent(event, toolDetail, notifType string) (status, detail string) {
 	case "PostToolUse":
 		return "working", toolDetail
 	case "Notification":
-		return "waiting", notificationDetail(notifType)
+		return "waiting", notificationDetail(notifType, title, message)
 	case "Stop":
 		return "idle", "Finished responding"
 	default:
@@ -110,15 +112,14 @@ func buildToolDetail(event, toolName string, toolInput json.RawMessage) string {
 	}
 }
 
-func notificationDetail(notifType string) string {
-	switch notifType {
-	case "idle_prompt":
-		return "Waiting for input"
-	case "permission_prompt":
-		return "Awaiting response"
-	default:
-		return notifType
+func notificationDetail(notifType, title, message string) string {
+	if title != "" {
+		return title
 	}
+	if message != "" {
+		return message
+	}
+	return "Awaiting response"
 }
 
 func tmuxInfo() (pane, title string) {
@@ -190,8 +191,16 @@ func run(stdin io.Reader, tmuxFn func() (string, string)) error {
 		session.CleanupStale(dir)
 	}
 
+	// Skip non-actionable notifications (e.g. idle_prompt after ~60s inactivity).
+	// The session file already has status "idle" from the prior Stop event.
+	if input.HookEventName == "Notification" &&
+		input.NotificationType != "permission_prompt" &&
+		input.NotificationType != "elicitation_dialog" {
+		return nil
+	}
+
 	toolDetail := buildToolDetail(input.HookEventName, input.ToolName, input.ToolInput)
-	status, detail := mapEvent(input.HookEventName, toolDetail, input.NotificationType)
+	status, detail := mapEvent(input.HookEventName, toolDetail, input.NotificationType, input.Title, input.Message)
 	if status == "" {
 		return nil // unknown event, no-op
 	}

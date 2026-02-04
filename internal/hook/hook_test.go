@@ -13,26 +13,30 @@ import (
 
 func TestMapEvent(t *testing.T) {
 	tests := []struct {
+		name       string
 		event      string
 		toolDetail string
 		notifType  string
+		title      string
+		message    string
 		wantStatus string
 		wantDetail string
 	}{
-		{"SessionStart", "", "", "starting", "Session started"},
-		{"UserPromptSubmit", "", "", "working", "Processing prompt..."},
-		{"PreToolUse", "Edit main.go", "", "working", "Edit main.go"},
-		{"PostToolUse", "Finished Bash, continuing...", "", "working", "Finished Bash, continuing..."},
-		{"Notification", "", "idle_prompt", "waiting", "Waiting for input"},
-		{"Notification", "", "permission_prompt", "waiting", "Awaiting response"},
-		{"Notification", "", "custom_type", "waiting", "custom_type"},
-		{"Stop", "", "", "idle", "Finished responding"},
-		{"UnknownEvent", "", "", "", ""},
+		{"SessionStart", "SessionStart", "", "", "", "", "starting", "Session started"},
+		{"UserPromptSubmit", "UserPromptSubmit", "", "", "", "", "working", "Processing prompt..."},
+		{"PreToolUse", "PreToolUse", "Edit main.go", "", "", "", "working", "Edit main.go"},
+		{"PostToolUse", "PostToolUse", "Finished Bash, continuing...", "", "", "", "working", "Finished Bash, continuing..."},
+		{"Notification with title", "Notification", "", "permission_prompt", "Allow Edit?", "", "waiting", "Allow Edit?"},
+		{"Notification with message only", "Notification", "", "permission_prompt", "", "Claude wants to edit", "waiting", "Claude wants to edit"},
+		{"Notification no title or message", "Notification", "", "permission_prompt", "", "", "waiting", "Awaiting response"},
+		{"Notification elicitation_dialog", "Notification", "", "elicitation_dialog", "Pick an option", "", "waiting", "Pick an option"},
+		{"Stop", "Stop", "", "", "", "", "idle", "Finished responding"},
+		{"UnknownEvent", "UnknownEvent", "", "", "", "", "", ""},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.event, func(t *testing.T) {
-			status, detail := mapEvent(tt.event, tt.toolDetail, tt.notifType)
+		t.Run(tt.name, func(t *testing.T) {
+			status, detail := mapEvent(tt.event, tt.toolDetail, tt.notifType, tt.title, tt.message)
 			if status != tt.wantStatus {
 				t.Errorf("status = %q, want %q", status, tt.wantStatus)
 			}
@@ -145,16 +149,20 @@ func TestBuildToolDetail(t *testing.T) {
 
 func TestNotificationDetail(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		name      string
+		notifType string
+		title     string
+		message   string
+		want      string
 	}{
-		{"idle_prompt", "Waiting for input"},
-		{"permission_prompt", "Awaiting response"},
-		{"something_else", "something_else"},
+		{"title takes precedence", "permission_prompt", "Allow Edit?", "some message", "Allow Edit?"},
+		{"message used when no title", "permission_prompt", "", "Claude wants to edit", "Claude wants to edit"},
+		{"fallback when no title or message", "permission_prompt", "", "", "Awaiting response"},
+		{"elicitation with title", "elicitation_dialog", "Pick option", "", "Pick option"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			if got := notificationDetail(tt.input); got != tt.want {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := notificationDetail(tt.notifType, tt.title, tt.message); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
@@ -347,6 +355,58 @@ func TestRun(t *testing.T) {
 		}
 		if *s.NotificationType != "permission_prompt" {
 			t.Errorf("notification_type = %q, want %q", *s.NotificationType, "permission_prompt")
+		}
+	})
+
+	t.Run("idle_prompt notification is skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// Create an existing session file with idle status
+		existing := session.Session{
+			SessionID:    "s-idle",
+			Project:      "/tmp",
+			Status:       "idle",
+			Detail:       "Finished responding",
+			LastActivity: time.Now().UTC().Format(time.RFC3339),
+		}
+		data, _ := json.Marshal(existing)
+		os.WriteFile(filepath.Join(dir, "s-idle.json"), data, 0644)
+
+		// Send idle_prompt notification — should be a no-op
+		input := `{"session_id":"s-idle","cwd":"/tmp","hook_event_name":"Notification","notification_type":"idle_prompt"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Session file should still have idle status (unchanged)
+		data, _ = os.ReadFile(filepath.Join(dir, "s-idle.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.Status != "idle" {
+			t.Errorf("status = %q, want %q (idle_prompt should not change status)", s.Status, "idle")
+		}
+	})
+
+	t.Run("permission_prompt notification captures title", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		input := `{"session_id":"s-perm","cwd":"/tmp","hook_event_name":"Notification","notification_type":"permission_prompt","title":"Allow Bash?","message":"Claude wants to run: rm -rf /tmp/foo"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s-perm.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.Status != "waiting" {
+			t.Errorf("status = %q, want %q", s.Status, "waiting")
+		}
+		if s.Detail != "Allow Bash?" {
+			t.Errorf("detail = %q, want %q", s.Detail, "Allow Bash?")
 		}
 	})
 
