@@ -122,6 +122,13 @@ func notificationDetail(notifType, title, message string) string {
 	return "Awaiting response"
 }
 
+// termInfo holds terminal environment info collected once per hook invocation.
+type termInfo struct {
+	tmuxPane  string
+	summary   string
+	runtimeID string
+}
+
 func tmuxInfo() (pane, title string) {
 	pane = os.Getenv("TMUX_PANE")
 	if pane == "" {
@@ -136,16 +143,74 @@ func tmuxInfo() (pane, title string) {
 	return pane, title
 }
 
-func readExistingPrompt(path string) string {
-	data, err := os.ReadFile(path)
+// wtRuntimeID uses PowerShell and UI Automation to find the currently selected
+// tab in the foreground Windows Terminal window. Only called on SessionStart,
+// so the active tab is the one where Claude Code just started.
+func wtRuntimeID() string {
+	script := `
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class WinAPI {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+}
+"@
+$fgHwnd = [WinAPI]::GetForegroundWindow()
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$wtCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
+$wtWindows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $wtCond)
+foreach ($w in $wtWindows) {
+    if ($w.Current.NativeWindowHandle -ne [int]$fgHwnd) { continue }
+    $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+    $tabs = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
+    foreach ($tab in $tabs) {
+        try {
+            $sel = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+            if ($sel.Current.IsSelected) {
+                $rid = $tab.GetRuntimeId()
+                ($rid -join ',')
+                exit
+            }
+        } catch {}
+    }
+}
+`
+
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
 	if err != nil {
 		return ""
 	}
+	return strings.TrimSpace(string(out))
+}
+
+// defaultTermInfo returns terminal info based on the current environment.
+// Captures both tmux and WT info when both are available (tmux inside WT).
+func defaultTermInfo(hookEvent, sessionID string) termInfo {
+	var ti termInfo
+	if os.Getenv("TMUX_PANE") != "" {
+		ti.tmuxPane, ti.summary = tmuxInfo()
+	}
+	if os.Getenv("WT_SESSION") != "" && hookEvent == "SessionStart" {
+		ti.runtimeID = wtRuntimeID()
+	}
+	return ti
+}
+
+// readExistingSession reads the existing session file and returns it.
+// Returns a zero-value Session if the file doesn't exist or is corrupt.
+func readExistingSession(path string) session.Session {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return session.Session{}
+	}
 	var s session.Session
 	if err := json.Unmarshal(data, &s); err != nil {
-		return ""
+		return session.Session{}
 	}
-	return s.LastPrompt
+	return s
 }
 
 func writeSessionFile(path string, s session.Session) error {
@@ -158,10 +223,10 @@ func writeSessionFile(path string, s session.Session) error {
 
 // Run is the entry point called from main.go. It reads hook input from stdin.
 func Run() error {
-	return run(os.Stdin, tmuxInfo)
+	return run(os.Stdin, defaultTermInfo)
 }
 
-func run(stdin io.Reader, tmuxFn func() (string, string)) error {
+func run(stdin io.Reader, termInfoFn func(string, string) termInfo) error {
 	dir := session.Dir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating sessions dir: %w", err)
@@ -205,16 +270,25 @@ func run(stdin io.Reader, tmuxFn func() (string, string)) error {
 		return nil // unknown event, no-op
 	}
 
+	// Read existing session for preserved fields (last_prompt, runtime_id)
+	existing := readExistingSession(sessionFile)
+
 	// Resolve last_prompt
 	var lastPrompt string
 	if input.HookEventName == "UserPromptSubmit" {
 		lastPrompt = input.Prompt
 	} else {
-		lastPrompt = readExistingPrompt(sessionFile)
+		lastPrompt = existing.LastPrompt
 	}
 
-	// Get tmux info
-	pane, title := tmuxFn()
+	// Get terminal info (tmux pane or WT runtime ID)
+	ti := termInfoFn(input.HookEventName, input.SessionID)
+
+	// Preserve RuntimeID from existing session on non-SessionStart events
+	runtimeID := ti.runtimeID
+	if runtimeID == "" && input.HookEventName != "SessionStart" {
+		runtimeID = existing.RuntimeID
+	}
 
 	// Build notification type pointer
 	var notifType *string
@@ -230,8 +304,9 @@ func run(stdin io.Reader, tmuxFn func() (string, string)) error {
 		LastPrompt:       lastPrompt,
 		NotificationType: notifType,
 		LastActivity:     time.Now().UTC().Format(time.RFC3339),
-		TmuxPane:         pane,
-		Summary:          title,
+		TmuxPane:         ti.tmuxPane,
+		Summary:          ti.summary,
+		RuntimeID:        runtimeID,
 	}
 
 	return writeSessionFile(sessionFile, s)

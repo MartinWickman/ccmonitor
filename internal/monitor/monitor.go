@@ -94,14 +94,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
 			if sid, ok := m.clickMap[msg.Y]; ok {
-				// Find the session to get tmux pane
+				// Find the session to switch to
 				for _, s := range m.sessions {
 					if s.SessionID == sid {
 						shortID := sid
 						if len(shortID) > 8 {
 							shortID = shortID[:8]
 						}
-						if err := switcher.Switch(s.TmuxPane); err != nil {
+						if err := switcher.Switch(s); err != nil {
 							m.statusMsg = fmt.Sprintf("Error: %v", err)
 						} else {
 							m.statusMsg = fmt.Sprintf("Switched to %s", shortID)

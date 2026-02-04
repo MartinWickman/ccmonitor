@@ -28,6 +28,7 @@ type Session struct {
 	LastActivity     string  `json:"last_activity"`
 	TmuxPane         string  `json:"tmux_pane"`
 	Summary          string  `json:"summary"`
+	RuntimeID        string  `json:"wt_tab_id,omitempty"`
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.
