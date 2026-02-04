@@ -147,9 +147,17 @@ func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[stri
 			detail = detail[:37] + "..."
 		}
 
-		prompt := s.LastPrompt
+		prompt := s.Summary
+		isPrompt := false
+		if prompt == "" {
+			prompt = s.LastPrompt
+			isPrompt = true
+		}
 		if len(prompt) > 70 {
 			prompt = prompt[:67] + "..."
+		}
+		if isPrompt && prompt != "" {
+			prompt = "\"" + prompt + "\""
 		}
 
 		phase := flashPhase(now, flashUntil[s.SessionID])
