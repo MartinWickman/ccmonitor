@@ -20,4 +20,4 @@ Tasks 2 and 3 can be done in parallel after 1. Task 4 depends on 3, task 5 depen
 
 - [ ] **6. Build the installer command** — Add hook configuration to Claude Code settings file, merging with existing hooks. Create sessions directory. For dev: target .claude/settings.local.json. For production: target ~/.claude/settings.json. Include uninstall option.
 
-- [ ] **7. Create test fixtures and end-to-end testing** — Script to generate fake session files for monitor testing. Pipe sample JSON to hook handler to test it. Verify full flow: install hooks → start Claude Code session → confirm status updates → confirm cleanup on session end.
+- [x] **7. Create test fixtures and end-to-end testing** — Integration test script (`test-integration.sh`) pipes hook events into `ccmonitor hook` and verifies `ccmonitor --once` output. Covers 6 scenarios: PreToolUse creates working session, UserPromptSubmit captures prompt, Stop sets idle, idle_prompt is ignored, permission_prompt sets waiting, SessionEnd removes session. Run via `make integration`. Fake session files in `test-sessions/` for manual monitor testing.

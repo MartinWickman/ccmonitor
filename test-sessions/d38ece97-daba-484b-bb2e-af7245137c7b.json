@@ -1,0 +1,11 @@
+{
+    "session_id": "d38ece97-daba-484b-bb2e-af7245137c7b",
+    "project": "/mnt/c/Users/marti/AIstuff/ccmonitor",
+    "status": "working",
+    "detail": "Bash: git add test-integration.sh Makefile TODO.md test-sessions/",
+    "last_prompt": "commit this",
+    "notification_type": null,
+    "last_activity": "2026-02-04T15:26:58Z",
+    "tmux_pane": "%6",
+    "summary": "⠂ Git commit"
+}
