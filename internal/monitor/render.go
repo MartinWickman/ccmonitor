@@ -148,14 +148,6 @@ func renderProjectGroup(g session.ProjectGroup, rows []SessionRow, w columnWidth
 	return b.String()
 }
 
-// padRight pads a string (which may contain ANSI codes) to the given visible width.
-func padRight(s string, width int) string {
-	visible := lipgloss.Width(s)
-	if visible >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-visible)
-}
 
 // flashPhase returns whether the flash is currently "on" (visible) or "off".
 // Returns 0=no flash, 1=on, 2=off (blinking cycle).

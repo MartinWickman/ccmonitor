@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -101,6 +102,15 @@ func (r SessionRow) Render(w columnWidths) string {
 	}
 
 	return line
+}
+
+// padRight pads a string (which may contain ANSI codes) to the given visible width.
+func padRight(s string, width int) string {
+	visible := lipgloss.Width(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
 }
 
 // Widths returns the visible column widths for this row.
