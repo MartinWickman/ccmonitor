@@ -9,8 +9,8 @@ import (
 	"github.com/martinwickman/ccmonitor/internal/session"
 )
 
-// SessionRow holds the data for one session table row plus its prompt.
-type SessionRow struct {
+// sessionRow holds the data for one session table row plus its prompt.
+type sessionRow struct {
 	connector       string
 	shortID         string
 	status          string
@@ -22,9 +22,9 @@ type SessionRow struct {
 	flashPhase      int // 0=none, 1=brightest ... 10=dimmest
 }
 
-// NewSessionRow builds a SessionRow from a session, applying truncation, styling,
+// newSessionRow builds a sessionRow from a session, applying truncation, styling,
 // and flash state. isLast indicates whether this is the last session in its group.
-func NewSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time) SessionRow {
+func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time) sessionRow {
 	now := time.Now()
 
 	connector := "├─"
@@ -60,7 +60,7 @@ func NewSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 
 	phase := flashPhase(now, flashUntil[s.SessionID])
 
-	return SessionRow{
+	return sessionRow{
 		connector:       lipgloss.NewStyle().Faint(true).Render(connector),
 		shortID:         lipgloss.NewStyle().Faint(true).Render(shortID),
 		status:          style.Render(indicator + " " + label),
@@ -73,9 +73,9 @@ func NewSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 	}
 }
 
-// Render produces the full output for this row: the main status line plus
+// render produces the full output for this row: the main status line plus
 // the optional prompt line below it.
-func (r SessionRow) Render(w columnWidths) string {
+func (r sessionRow) render(w columnWidths) string {
 	elapsed := r.elapsed
 	if r.flashPhase == 1 {
 		elapsed = lipgloss.NewStyle().
@@ -113,8 +113,8 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-visible)
 }
 
-// Widths returns the visible column widths for this row.
-func (r SessionRow) Widths() columnWidths {
+// widths returns the visible column widths for this row.
+func (r sessionRow) widths() columnWidths {
 	return columnWidths{
 		conn:   lipgloss.Width(r.connector),
 		id:     lipgloss.Width(r.shortID),

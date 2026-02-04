@@ -58,8 +58,8 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 	b.WriteString("\n")
 
 	// Build rows for all groups and compute global column widths
-	groupRows := make([][]SessionRow, len(groups))
-	var allRows []SessionRow
+	groupRows := make([][]sessionRow, len(groups))
+	var allRows []sessionRow
 	for i, g := range groups {
 		rows := buildRows(g.Sessions, sp, flashUntil)
 		groupRows[i] = rows
@@ -111,20 +111,20 @@ func renderSummary(sessions []session.Session) string {
 }
 
 // buildRows converts sessions into styled row data.
-func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []SessionRow {
-	var rows []SessionRow
+func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []sessionRow {
+	var rows []sessionRow
 	for i, s := range sessions {
 		isLast := i == len(sessions)-1
-		rows = append(rows, NewSessionRow(s, isLast, sp, flashUntil))
+		rows = append(rows, newSessionRow(s, isLast, sp, flashUntil))
 	}
 	return rows
 }
 
 // computeWidths calculates column widths across all rows globally.
-func computeWidths(allRows []SessionRow) columnWidths {
+func computeWidths(allRows []sessionRow) columnWidths {
 	w := columnWidths{status: 12} // fixed minimum to prevent spinner jitter
 	for _, r := range allRows {
-		rw := r.Widths()
+		rw := r.widths()
 		w.conn = max(w.conn, rw.conn)
 		w.id = max(w.id, rw.id)
 		w.status = max(w.status, rw.status)
@@ -133,7 +133,7 @@ func computeWidths(allRows []SessionRow) columnWidths {
 	return w
 }
 
-func renderProjectGroup(g session.ProjectGroup, rows []SessionRow, w columnWidths) string {
+func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths) string {
 	var b strings.Builder
 
 	dirName := filepath.Base(g.Project)
@@ -142,7 +142,7 @@ func renderProjectGroup(g session.ProjectGroup, rows []SessionRow, w columnWidth
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
 	for _, r := range rows {
-		b.WriteString(r.Render(w))
+		b.WriteString(r.render(w))
 	}
 
 	return b.String()

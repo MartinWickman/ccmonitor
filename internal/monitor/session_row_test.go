@@ -45,9 +45,9 @@ func TestSessionRowRender(t *testing.T) {
 			LastPrompt:   "Fix the bug",
 			LastActivity: time.Now().Add(-2 * time.Minute).Format(time.RFC3339),
 		}
-		row := NewSessionRow(s, true, sp, nil)
+		row := newSessionRow(s, true, sp, nil)
 		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
-		output := row.Render(w)
+		output := row.render(w)
 
 		if !strings.Contains(output, "abcd1234") {
 			t.Error("output should contain truncated session ID")
@@ -75,9 +75,9 @@ func TestSessionRowRender(t *testing.T) {
 			Detail:       "Edit main.go",
 			LastActivity: time.Now().Format(time.RFC3339),
 		}
-		row := NewSessionRow(s, false, sp, nil)
+		row := newSessionRow(s, false, sp, nil)
 		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
-		output := row.Render(w)
+		output := row.render(w)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
 		if len(lines) != 1 {
