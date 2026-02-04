@@ -9,9 +9,9 @@ import (
 	"time"
 )
 
-// StaleThreshold is the duration after which inactive sessions are considered stale
+// staleThreshold is the duration after which inactive sessions are considered stale
 // and excluded from the monitor display.
-const StaleThreshold = 1 * time.Hour
+const staleThreshold = 1 * time.Hour
 
 // Session represents the state of a single Claude Code instance.
 type Session struct {
@@ -63,9 +63,9 @@ func LoadAll(dir string) ([]Session, error) {
 			continue // skip corrupt files
 		}
 
-		// Skip stale sessions (inactive for longer than StaleThreshold)
+		// Skip stale sessions (inactive for longer than staleThreshold)
 		if t, err := time.Parse(time.RFC3339, s.LastActivity); err == nil {
-			if time.Since(t) > StaleThreshold {
+			if time.Since(t) > staleThreshold {
 				continue
 			}
 		}
