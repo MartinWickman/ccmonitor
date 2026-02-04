@@ -12,7 +12,7 @@ Tasks 2 and 3 can be done in parallel after 1. Task 4 depends on 3, task 5 depen
 
 - [x] **2. Implement the hook handler bash script** — Read JSON from stdin, map hook events to statuses, capture last_prompt from UserPromptSubmit, write session JSON file. Delete own session file on SessionEnd. Support CCMONITOR_SESSIONS_DIR env var. Note: stale session cleanup was removed — PID-based detection was unreliable (PPID captures ephemeral process, not Claude Code). Stale detection to be revisited later.
 
-- [~] **3. Implement the session file reader in Go** — Reader done: loads all JSON files, parses into Session structs, skips corrupt files, supports CCMONITOR_SESSIONS_DIR. Grouping by project done (`GroupByProject`, `TimeSince`). Still needed: PID liveness checks (pending reliable PID strategy).
+- [x] **3. Implement the session file reader in Go** — Reader done: loads all JSON files, parses into Session structs, skips corrupt files, supports CCMONITOR_SESSIONS_DIR. Grouping by project done (`GroupByProject`, `TimeSince`). Stale session filtering: sessions inactive for 1+ hour are excluded from `LoadAll`. PID field removed — staleness is time-based instead.
 
 - [x] **4. Implement the monitor CLI display** — Live-updating Bubble Tea TUI. Sessions grouped by project in rounded border boxes. Color coding via Lip Gloss (green=working, yellow=waiting, dim=idle, cyan=starting, red=exited). Tree-style connectors, truncated detail/prompt, italic last_prompt, relative timestamps. Auto-refresh every 1 second. Clean exit on q/Ctrl+C. Handles empty state. Uses alt-screen mode.
 

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+// StaleThreshold is the duration after which inactive sessions are considered stale
+// and excluded from the monitor display.
+const StaleThreshold = 1 * time.Hour
+
 // Session represents the state of a single Claude Code instance.
 type Session struct {
 	SessionID        string  `json:"session_id"`
@@ -18,8 +22,8 @@ type Session struct {
 	LastPrompt       string  `json:"last_prompt"`
 	NotificationType *string `json:"notification_type"`
 	LastActivity     string  `json:"last_activity"`
-	PID              int     `json:"pid"`
 	TmuxPane         string  `json:"tmux_pane"`
+	Summary          string  `json:"summary"`
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.
@@ -58,6 +62,14 @@ func LoadAll(dir string) ([]Session, error) {
 		if err != nil {
 			continue // skip corrupt files
 		}
+
+		// Skip stale sessions (inactive for longer than StaleThreshold)
+		if t, err := time.Parse(time.RFC3339, s.LastActivity); err == nil {
+			if time.Since(t) > StaleThreshold {
+				continue
+			}
+		}
+
 		sessions = append(sessions, *s)
 	}
 

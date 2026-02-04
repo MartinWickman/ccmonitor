@@ -123,7 +123,7 @@ func TestLoadAll(t *testing.T) {
 
 	t.Run("missing tmux_pane field should default to empty string", func(t *testing.T) {
 		dir := t.TempDir()
-		data := []byte(`{"session_id":"old1","project":"/p","status":"idle","pid":1}`)
+		data := []byte(`{"session_id":"old1","project":"/p","status":"idle","last_activity":"` + time.Now().UTC().Format(time.RFC3339) + `"}`)
 		if err := os.WriteFile(filepath.Join(dir, "old1.json"), data, 0644); err != nil {
 			t.Fatalf("write file: %v", err)
 		}
@@ -137,6 +137,53 @@ func TestLoadAll(t *testing.T) {
 		}
 		if sessions[0].TmuxPane != "" {
 			t.Errorf("got tmux_pane %q, want empty string", sessions[0].TmuxPane)
+		}
+	})
+
+	t.Run("stale session should be excluded", func(t *testing.T) {
+		dir := t.TempDir()
+		staleTime := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+		recentTime := time.Now().UTC().Format(time.RFC3339)
+
+		writeSessionFile(t, dir, Session{
+			SessionID:    "stale1",
+			Project:      "/home/user/project",
+			Status:       "idle",
+			LastActivity: staleTime,
+		})
+		writeSessionFile(t, dir, Session{
+			SessionID:    "recent1",
+			Project:      "/home/user/project",
+			Status:       "working",
+			LastActivity: recentTime,
+		})
+
+		sessions, err := LoadAll(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sessions) != 1 {
+			t.Fatalf("got %d sessions, want 1 (stale should be excluded)", len(sessions))
+		}
+		if sessions[0].SessionID != "recent1" {
+			t.Errorf("got session %q, want %q", sessions[0].SessionID, "recent1")
+		}
+	})
+
+	t.Run("session with empty last_activity should be included", func(t *testing.T) {
+		dir := t.TempDir()
+		writeSessionFile(t, dir, Session{
+			SessionID: "nots1",
+			Project:   "/p",
+			Status:    "starting",
+		})
+
+		sessions, err := LoadAll(dir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sessions) != 1 {
+			t.Fatalf("got %d sessions, want 1 (empty last_activity should be included)", len(sessions))
 		}
 	})
 }

@@ -21,9 +21,33 @@ TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // empty')
 NOTIFICATION_TYPE=$(echo "$INPUT" | jq -r '.notification_type // empty')
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
 TMUX_PANE_VAL="${TMUX_PANE:-}"
+TMUX_TITLE=""
+if [ -n "$TMUX_PANE_VAL" ]; then
+    TMUX_TITLE=$(tmux display-message -p -t "$TMUX_PANE_VAL" '#{pane_title}' 2>/dev/null) || TMUX_TITLE=""
+    # Strip the "✳ " prefix that Claude Code adds
+    TMUX_TITLE="${TMUX_TITLE#✳ }"
+fi
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 SESSION_FILE="$SESSIONS_DIR/$SESSION_ID.json"
+
+# Remove session files with last_activity older than 1 hour
+cleanup_stale() {
+    local now
+    now=$(date -u +%s)
+    for f in "$SESSIONS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        local ts
+        ts=$(jq -r '.last_activity // empty' "$f" 2>/dev/null) || continue
+        [ -n "$ts" ] || continue
+        local file_epoch
+        file_epoch=$(date -u -d "$ts" +%s 2>/dev/null) || continue
+        local age=$(( now - file_epoch ))
+        if [ "$age" -gt 3600 ]; then
+            rm -f "$f"
+        fi
+    done
+}
 
 # Build a short detail string from tool info
 build_tool_detail() {
@@ -73,6 +97,7 @@ build_tool_detail() {
 # Map event to status and detail
 case "$EVENT" in
     SessionStart)
+        cleanup_stale
         STATUS="starting"
         DETAIL="Session started"
         ;;
@@ -101,6 +126,7 @@ case "$EVENT" in
         DETAIL="Finished responding"
         ;;
     SessionEnd)
+        cleanup_stale
         rm -f "$SESSION_FILE"
         exit 0
         ;;
@@ -126,8 +152,8 @@ jq -n \
     --arg last_prompt "$LAST_PROMPT" \
     --arg notification_type "$NOTIFICATION_TYPE" \
     --arg ts "$TIMESTAMP" \
-    --argjson pid "${PPID:-0}" \
     --arg tmux_pane "$TMUX_PANE_VAL" \
+    --arg summary "$TMUX_TITLE" \
     '{
         session_id: $sid,
         project: $proj,
@@ -136,6 +162,6 @@ jq -n \
         last_prompt: $last_prompt,
         notification_type: (if $notification_type == "" then null else $notification_type end),
         last_activity: $ts,
-        pid: $pid,
-        tmux_pane: $tmux_pane
+        tmux_pane: $tmux_pane,
+        summary: $summary
     }' > "$SESSION_FILE"
