@@ -129,6 +129,49 @@ pipe_hook "{
 }"
 assert_output_not_contains "session removed" "bbbbbbbb"
 
+# --- Scenario 7: Stale "starting" session is hidden after 2 minutes ---
+echo "Scenario 7: Stale starting session is hidden (>2min threshold)"
+# Clean up SID1 so only the stale session remains
+rm -f "$SESSION_DIR/$SID1.json"
+
+SID3="cccccccc-3333-4444-5555-666666666666"
+STALE_TIME=$(date -u -d '3 minutes ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+    || date -u -v-3M '+%Y-%m-%dT%H:%M:%SZ') # GNU date || BSD date
+cat > "$SESSION_DIR/$SID3.json" <<SESS
+{
+    "session_id": "$SID3",
+    "project": "/tmp/staleproject",
+    "status": "starting",
+    "detail": "Session started",
+    "last_prompt": "",
+    "notification_type": null,
+    "last_activity": "$STALE_TIME",
+    "tmux_pane": "",
+    "summary": ""
+}
+SESS
+assert_output_not_contains "stale starting session hidden" "cccccccc"
+assert_output_not_contains "stale project not shown" "staleproject"
+
+# Verify a fresh "starting" session IS shown
+SID4="dddddddd-4444-5555-6666-777777777777"
+FRESH_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+cat > "$SESSION_DIR/$SID4.json" <<SESS
+{
+    "session_id": "$SID4",
+    "project": "/tmp/freshproject",
+    "status": "starting",
+    "detail": "Session started",
+    "last_prompt": "",
+    "notification_type": null,
+    "last_activity": "$FRESH_TIME",
+    "tmux_pane": "",
+    "summary": ""
+}
+SESS
+assert_output_contains "fresh starting session shown" "dddddddd"
+assert_output_contains "fresh starting status shown" "Started"
+
 # --- Results ---
 echo ""
 TOTAL=$((PASS + FAIL))
