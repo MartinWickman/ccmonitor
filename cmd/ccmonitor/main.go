@@ -6,12 +6,21 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/martinwickman/ccmonitor/internal/hook"
 	"github.com/martinwickman/ccmonitor/internal/monitor"
 	"github.com/martinwickman/ccmonitor/internal/session"
 	"golang.org/x/term"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hook" {
+		if err := hook.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "ccmonitor hook: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	once := flag.Bool("once", false, "print current state and exit")
 	flag.Parse()
 

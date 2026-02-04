@@ -1,0 +1,389 @@
+package hook
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/martinwickman/ccmonitor/internal/session"
+)
+
+func TestMapEvent(t *testing.T) {
+	tests := []struct {
+		event      string
+		toolDetail string
+		notifType  string
+		wantStatus string
+		wantDetail string
+	}{
+		{"SessionStart", "", "", "starting", "Session started"},
+		{"UserPromptSubmit", "", "", "working", "Processing prompt..."},
+		{"PreToolUse", "Edit main.go", "", "working", "Edit main.go"},
+		{"PostToolUse", "Finished Bash, continuing...", "", "working", "Finished Bash, continuing..."},
+		{"Notification", "", "idle_prompt", "waiting", "Waiting for input"},
+		{"Notification", "", "permission_prompt", "waiting", "Awaiting response"},
+		{"Notification", "", "custom_type", "waiting", "custom_type"},
+		{"Stop", "", "", "idle", "Finished responding"},
+		{"UnknownEvent", "", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.event, func(t *testing.T) {
+			status, detail := mapEvent(tt.event, tt.toolDetail, tt.notifType)
+			if status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", status, tt.wantStatus)
+			}
+			if detail != tt.wantDetail {
+				t.Errorf("detail = %q, want %q", detail, tt.wantDetail)
+			}
+		})
+	}
+}
+
+func TestBuildToolDetail(t *testing.T) {
+	tests := []struct {
+		name     string
+		event    string
+		toolName string
+		input    any
+		want     string
+	}{
+		{
+			name: "empty tool name",
+			event: "PreToolUse", toolName: "", input: nil,
+			want: "",
+		},
+		{
+			name: "PostToolUse returns finished message",
+			event: "PostToolUse", toolName: "Bash", input: nil,
+			want: "Finished Bash, continuing...",
+		},
+		{
+			name: "Bash with command",
+			event: "PreToolUse", toolName: "Bash",
+			input: map[string]any{"command": "npm test"},
+			want:  "Bash: npm test",
+		},
+		{
+			name: "Bash command truncated at 80 chars",
+			event: "PreToolUse", toolName: "Bash",
+			input: map[string]any{"command": strings.Repeat("x", 100)},
+			want:  "Bash: " + strings.Repeat("x", 80),
+		},
+		{
+			name: "Bash without command",
+			event: "PreToolUse", toolName: "Bash",
+			input: map[string]any{},
+			want:  "Bash",
+		},
+		{
+			name: "Edit with file_path",
+			event: "PreToolUse", toolName: "Edit",
+			input: map[string]any{"file_path": "/home/user/project/src/main.go"},
+			want:  "Edit main.go",
+		},
+		{
+			name: "Read with file_path",
+			event: "PreToolUse", toolName: "Read",
+			input: map[string]any{"file_path": "/tmp/foo.txt"},
+			want:  "Read foo.txt",
+		},
+		{
+			name: "Write without file_path",
+			event: "PreToolUse", toolName: "Write",
+			input: map[string]any{},
+			want:  "Write",
+		},
+		{
+			name: "Glob with pattern",
+			event: "PreToolUse", toolName: "Glob",
+			input: map[string]any{"pattern": "**/*.go"},
+			want:  "Glob **/*.go",
+		},
+		{
+			name: "Grep with pattern",
+			event: "PreToolUse", toolName: "Grep",
+			input: map[string]any{"pattern": "func main"},
+			want:  "Grep func main",
+		},
+		{
+			name: "Task with description",
+			event: "PreToolUse", toolName: "Task",
+			input: map[string]any{"description": "search for errors"},
+			want:  "Task: search for errors",
+		},
+		{
+			name: "WebFetch returns tool name only",
+			event: "PreToolUse", toolName: "WebFetch",
+			input: map[string]any{"url": "https://example.com"},
+			want:  "WebFetch",
+		},
+		{
+			name: "unknown tool returns tool name",
+			event: "PreToolUse", toolName: "CustomTool",
+			input: nil,
+			want:  "CustomTool",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var raw json.RawMessage
+			if tt.input != nil {
+				raw, _ = json.Marshal(tt.input)
+			}
+			got := buildToolDetail(tt.event, tt.toolName, raw)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotificationDetail(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"idle_prompt", "Waiting for input"},
+		{"permission_prompt", "Awaiting response"},
+		{"something_else", "something_else"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := notificationDetail(tt.input); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadExistingPrompt(t *testing.T) {
+	t.Run("existing file with last_prompt", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "test.json")
+		s := session.Session{
+			SessionID:  "test1",
+			LastPrompt: "do the thing",
+		}
+		data, _ := json.Marshal(s)
+		os.WriteFile(path, data, 0644)
+
+		got := readExistingPrompt(path)
+		if got != "do the thing" {
+			t.Errorf("got %q, want %q", got, "do the thing")
+		}
+	})
+
+	t.Run("missing file returns empty", func(t *testing.T) {
+		got := readExistingPrompt("/nonexistent/file.json")
+		if got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+
+	t.Run("corrupt JSON returns empty", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "bad.json")
+		os.WriteFile(path, []byte("{bad"), 0644)
+
+		got := readExistingPrompt(path)
+		if got != "" {
+			t.Errorf("got %q, want empty", got)
+		}
+	})
+}
+
+func TestRun(t *testing.T) {
+	stubTmux := func() (string, string) { return "", "" }
+
+	t.Run("PreToolUse writes session file", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		input := `{"session_id":"s1","cwd":"/tmp/proj","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, err := os.ReadFile(filepath.Join(dir, "s1.json"))
+		if err != nil {
+			t.Fatalf("reading session file: %v", err)
+		}
+		var s session.Session
+		if err := json.Unmarshal(data, &s); err != nil {
+			t.Fatalf("parsing session file: %v", err)
+		}
+		if s.Status != "working" {
+			t.Errorf("status = %q, want %q", s.Status, "working")
+		}
+		if s.Detail != "Bash: ls -la" {
+			t.Errorf("detail = %q, want %q", s.Detail, "Bash: ls -la")
+		}
+		if s.Project != "/tmp/proj" {
+			t.Errorf("project = %q, want %q", s.Project, "/tmp/proj")
+		}
+		if s.NotificationType != nil {
+			t.Errorf("notification_type = %v, want nil", s.NotificationType)
+		}
+	})
+
+	t.Run("UserPromptSubmit captures prompt", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		input := `{"session_id":"s2","cwd":"/tmp","hook_event_name":"UserPromptSubmit","prompt":"fix the bug"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s2.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.LastPrompt != "fix the bug" {
+			t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "fix the bug")
+		}
+		if s.Status != "working" {
+			t.Errorf("status = %q, want %q", s.Status, "working")
+		}
+	})
+
+	t.Run("subsequent event preserves last_prompt from existing file", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// First: write a session file with a prompt
+		existing := session.Session{
+			SessionID:  "s3",
+			LastPrompt: "original prompt",
+		}
+		data, _ := json.Marshal(existing)
+		os.WriteFile(filepath.Join(dir, "s3.json"), data, 0644)
+
+		// Then: send a Stop event (should preserve last_prompt)
+		input := `{"session_id":"s3","cwd":"/tmp","hook_event_name":"Stop"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ = os.ReadFile(filepath.Join(dir, "s3.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.LastPrompt != "original prompt" {
+			t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "original prompt")
+		}
+	})
+
+	t.Run("SessionEnd deletes session file", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// Create existing session file
+		os.WriteFile(filepath.Join(dir, "s4.json"), []byte(`{"session_id":"s4"}`), 0644)
+
+		input := `{"session_id":"s4","cwd":"/tmp","hook_event_name":"SessionEnd"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "s4.json")); !os.IsNotExist(err) {
+			t.Error("session file should have been deleted")
+		}
+	})
+
+	t.Run("SessionStart cleans up stale files", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// Create a stale session file
+		staleTime := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+		stale := session.Session{
+			SessionID:    "stale1",
+			Project:      "/p",
+			Status:       "idle",
+			LastActivity: staleTime,
+		}
+		data, _ := json.Marshal(stale)
+		os.WriteFile(filepath.Join(dir, "stale1.json"), data, 0644)
+
+		input := `{"session_id":"s5","cwd":"/tmp","hook_event_name":"SessionStart"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Stale file should be cleaned up
+		if _, err := os.Stat(filepath.Join(dir, "stale1.json")); !os.IsNotExist(err) {
+			t.Error("stale session file should have been deleted")
+		}
+		// New session file should exist
+		if _, err := os.Stat(filepath.Join(dir, "s5.json")); err != nil {
+			t.Error("new session file should have been created")
+		}
+	})
+
+	t.Run("Notification sets notification_type", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		input := `{"session_id":"s6","cwd":"/tmp","hook_event_name":"Notification","notification_type":"permission_prompt"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s6.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.NotificationType == nil {
+			t.Fatal("notification_type should not be nil")
+		}
+		if *s.NotificationType != "permission_prompt" {
+			t.Errorf("notification_type = %q, want %q", *s.NotificationType, "permission_prompt")
+		}
+	})
+
+	t.Run("unknown event is a no-op", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		input := `{"session_id":"s7","cwd":"/tmp","hook_event_name":"SomeFutureEvent"}`
+		err := run(strings.NewReader(input), stubTmux)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "s7.json")); !os.IsNotExist(err) {
+			t.Error("no session file should be created for unknown events")
+		}
+	})
+
+	t.Run("tmux info is captured", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		tmuxFn := func() (string, string) { return "%5", "my project" }
+		input := `{"session_id":"s8","cwd":"/tmp","hook_event_name":"Stop"}`
+		err := run(strings.NewReader(input), tmuxFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s8.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.TmuxPane != "%5" {
+			t.Errorf("tmux_pane = %q, want %q", s.TmuxPane, "%5")
+		}
+		if s.Summary != "my project" {
+			t.Errorf("summary = %q, want %q", s.Summary, "my project")
+		}
+	})
+}

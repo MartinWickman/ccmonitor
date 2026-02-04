@@ -13,6 +13,10 @@ import (
 // and excluded from the monitor display.
 const staleThreshold = 1 * time.Hour
 
+// startingStaleThreshold is a shorter threshold for "starting" sessions, which are
+// likely orphaned from a resumed session that never received further hook events.
+const startingStaleThreshold = 2 * time.Minute
+
 // Session represents the state of a single Claude Code instance.
 type Session struct {
 	SessionID        string  `json:"session_id"`
@@ -65,7 +69,12 @@ func LoadAll(dir string) ([]Session, error) {
 
 		// Skip stale sessions (inactive for longer than staleThreshold)
 		if t, err := time.Parse(time.RFC3339, s.LastActivity); err == nil {
-			if time.Since(t) > staleThreshold {
+			age := time.Since(t)
+			if age > staleThreshold {
+				continue
+			}
+			// "starting" sessions that haven't progressed are likely orphaned
+			if s.Status == "starting" && age > startingStaleThreshold {
 				continue
 			}
 		}
@@ -126,6 +135,38 @@ func TimeSince(timestamp string) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+// CleanupStale removes session files with last_activity older than staleThreshold.
+// Returns nil if the directory does not exist.
+func CleanupStale(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading sessions dir: %w", err)
+	}
+
+	now := time.Now()
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		s, err := loadFile(path)
+		if err != nil {
+			continue // skip corrupt files
+		}
+		t, err := time.Parse(time.RFC3339, s.LastActivity)
+		if err != nil {
+			continue // skip unparseable timestamps
+		}
+		if now.Sub(t) > staleThreshold {
+			os.Remove(path)
+		}
+	}
+	return nil
 }
 
 func loadFile(path string) (*Session, error) {

@@ -9,6 +9,10 @@ ccmonitor uses Claude Code hooks to collect status data from all running instanc
 - **Never modify `~/.claude/settings.json`** during development. Use `.claude/settings.local.json` (project-scoped, gitignored) for testing hooks.
 - Both the hook handler and monitor must support a `CCMONITOR_SESSIONS_DIR` environment variable that overrides the default `~/.ccmonitor/sessions/` path. Use this to point at a local test directory during development.
 - Use fake session files to test the monitor UI without needing live Claude Code sessions.
+- Don't git commit unless told to!
+- To parse and see the output, you can run the command with `ccmonitor --once` to just have it run, print the output and then exit.
+- Run unit tests
+- Update the @TODO file to keep track.
 
 ## Key files
 
