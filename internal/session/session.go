@@ -77,8 +77,9 @@ func LoadAll(dir string) ([]Session, error) {
 }
 
 // GroupByProject groups sessions by their project directory, sorted by project name.
-// Within each group, sessions are sorted by last activity (most recent first).
-func GroupByProject(sessions []Session) []ProjectGroup {
+// When sortByLatest is true, sessions within each group are sorted by last activity
+// (most recent first). Otherwise, sessions are sorted by session ID (stable order).
+func GroupByProject(sessions []Session, sortByLatest bool) []ProjectGroup {
 	grouped := make(map[string][]Session)
 	for _, s := range sessions {
 		grouped[s.Project] = append(grouped[s.Project], s)
@@ -86,9 +87,15 @@ func GroupByProject(sessions []Session) []ProjectGroup {
 
 	var groups []ProjectGroup
 	for project, sess := range grouped {
-		sort.Slice(sess, func(i, j int) bool {
-			return sess[i].LastActivity > sess[j].LastActivity
-		})
+		if sortByLatest {
+			sort.Slice(sess, func(i, j int) bool {
+				return sess[i].LastActivity > sess[j].LastActivity
+			})
+		} else {
+			sort.Slice(sess, func(i, j int) bool {
+				return sess[i].SessionID < sess[j].SessionID
+			})
+		}
 		groups = append(groups, ProjectGroup{Project: project, Sessions: sess})
 	}
 

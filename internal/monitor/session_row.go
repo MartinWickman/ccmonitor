@@ -24,7 +24,7 @@ type sessionRow struct {
 
 // newSessionRow builds a sessionRow from a session, applying truncation, styling,
 // and flash state. isLast indicates whether this is the last session in its group.
-func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time) sessionRow {
+func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool) sessionRow {
 	now := time.Now()
 
 	connector := "├─"
@@ -45,11 +45,21 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 		detail = detail[:37] + "..."
 	}
 
-	prompt := s.Summary
+	var prompt string
 	isPrompt := false
-	if prompt == "" {
+	if showSummary {
+		prompt = s.Summary
+		if prompt == "" {
+			prompt = s.LastPrompt
+			isPrompt = true
+		}
+	} else {
 		prompt = s.LastPrompt
 		isPrompt = true
+		if prompt == "" {
+			prompt = s.Summary
+			isPrompt = false
+		}
 	}
 	if len(prompt) > 70 {
 		prompt = prompt[:67] + "..."

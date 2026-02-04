@@ -46,6 +46,10 @@ type Model struct {
 	statusMsg string
 	// statusUntil is when to clear the status message.
 	statusUntil time.Time
+	// sortByLatest toggles session sort order: false=by session ID, true=by latest activity.
+	sortByLatest bool
+	// showSummary toggles subtitle display: true=prefer summary, false=prefer prompt.
+	showSummary bool
 }
 
 // New creates a new monitor model that reads from the given directory.
@@ -62,6 +66,8 @@ func New(sessionsDir string) Model {
 		spinner:     s,
 		lastState:   map[string]string{},
 		flashUntil:  map[string]time.Time{},
+		showSummary: false,
+		sortByLatest: false,
 	}
 }
 
@@ -75,6 +81,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "s":
+			m.sortByLatest = !m.sortByLatest
+			return m, nil
+		case "p":
+			m.showSummary = !m.showSummary
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -104,7 +116,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
 		// Build click map by scanning the actual rendered view for session IDs.
-		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "")
+		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary)
 		m.clickMap = buildClickMap(m.sessions, view)
 		now := time.Now()
 		newFlash := false
@@ -149,5 +161,5 @@ func (m Model) View() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusUntil) {
 		status = m.statusMsg
 	}
-	return render(m.sessions, m.spinner, m.width, m.flashUntil, status)
+	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.sortByLatest, m.showSummary)
 }

@@ -45,7 +45,7 @@ func TestSessionRowRender(t *testing.T) {
 			LastPrompt:   "Fix the bug",
 			LastActivity: time.Now().Add(-2 * time.Minute).Format(time.RFC3339),
 		}
-		row := newSessionRow(s, true, sp, nil)
+		row := newSessionRow(s, true, sp, nil, true)
 		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
 		output := row.render(w)
 
@@ -75,7 +75,7 @@ func TestSessionRowRender(t *testing.T) {
 			Detail:       "Edit main.go",
 			LastActivity: time.Now().Format(time.RFC3339),
 		}
-		row := newSessionRow(s, false, sp, nil)
+		row := newSessionRow(s, false, sp, nil, true)
 		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
 		output := row.render(w)
 

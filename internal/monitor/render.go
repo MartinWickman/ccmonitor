@@ -20,14 +20,14 @@ type columnWidths struct {
 func RenderOnce(sessions []session.Session, width int) string {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	return renderView(sessions, sp, width, nil, "", false)
+	return renderView(sessions, sp, width, nil, "", false, false, true)
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string) string {
-	return renderView(sessions, sp, width, flashUntil, statusMsg, true)
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, sortByLatest bool, showSummary bool) string {
+	return renderView(sessions, sp, width, flashUntil, statusMsg, true, sortByLatest, showSummary)
 }
 
-func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool) string {
+func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, sortByLatest bool, showSummary bool) string {
 	if width == 0 {
 		width = 80
 	}
@@ -36,12 +36,12 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 		s := titleStyle.Render("ccmonitor") + "\n\n" +
 			idleStyle.Render("No active sessions.")
 		if interactive {
-			s += "\n" + helpStyle.Render("Press q to quit. Click a session to switch tmux pane.")
+			s += "\n" + helpStyle.Render("q quit · s sort · p prompt/title · click to switch pane")
 		}
 		return s
 	}
 
-	groups := session.GroupByProject(sessions)
+	groups := session.GroupByProject(sessions, sortByLatest)
 
 	// Box width accounts for border (2) and padding (2)
 	boxWidth := width - 4
@@ -61,7 +61,7 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 	groupRows := make([][]sessionRow, len(groups))
 	var allRows []sessionRow
 	for i, g := range groups {
-		rows := buildRows(g.Sessions, sp, flashUntil)
+		rows := buildRows(g.Sessions, sp, flashUntil, showSummary)
 		groupRows[i] = rows
 		allRows = append(allRows, rows...)
 	}
@@ -78,7 +78,7 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 		if statusMsg != "" {
 			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(statusMsg) + "\n")
 		}
-		b.WriteString(helpStyle.Render("Press q to quit. Click a session to switch tmux pane."))
+		b.WriteString(helpStyle.Render("q quit · s sort · p prompt/title · click to switch pane"))
 	}
 
 	return b.String()
@@ -111,11 +111,11 @@ func renderSummary(sessions []session.Session) string {
 }
 
 // buildRows converts sessions into styled row data.
-func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []sessionRow {
+func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool) []sessionRow {
 	var rows []sessionRow
 	for i, s := range sessions {
 		isLast := i == len(sessions)-1
-		rows = append(rows, newSessionRow(s, isLast, sp, flashUntil))
+		rows = append(rows, newSessionRow(s, isLast, sp, flashUntil, showSummary))
 	}
 	return rows
 }
