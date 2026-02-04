@@ -11,19 +11,6 @@ import (
 	"github.com/martinwickman/ccmonitor/internal/session"
 )
 
-// sessionRow holds the data for one session table row plus its prompt.
-type sessionRow struct {
-	connector       string
-	shortID         string
-	status          string
-	detail          string
-	elapsed         string
-	rawLastActivity string
-	prompt          string
-	isLast          bool
-	flashPhase      int // 0=none, 1=brightest ... 10=dimmest
-}
-
 // columnWidths holds the computed widths for each column.
 type columnWidths struct {
 	conn, id, status, detail int
@@ -71,8 +58,8 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 	b.WriteString("\n")
 
 	// Build rows for all groups and compute global column widths
-	groupRows := make([][]sessionRow, len(groups))
-	var allRows []sessionRow
+	groupRows := make([][]SessionRow, len(groups))
+	var allRows []SessionRow
 	for i, g := range groups {
 		rows := buildRows(g.Sessions, sp, flashUntil)
 		groupRows[i] = rows
@@ -124,72 +111,29 @@ func renderSummary(sessions []session.Session) string {
 }
 
 // buildRows converts sessions into styled row data.
-func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []sessionRow {
-	now := time.Now()
-	var rows []sessionRow
+func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time) []SessionRow {
+	var rows []SessionRow
 	for i, s := range sessions {
 		isLast := i == len(sessions)-1
-		connector := "├─"
-		if isLast {
-			connector = "└─"
-		}
-
-		shortID := s.SessionID
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
-		}
-
-		indicator, style, label := statusDisplay(s.Status, sp)
-		elapsed := session.TimeSince(s.LastActivity)
-
-		detail := s.Detail
-		if len(detail) > 40 {
-			detail = detail[:37] + "..."
-		}
-
-		prompt := s.Summary
-		isPrompt := false
-		if prompt == "" {
-			prompt = s.LastPrompt
-			isPrompt = true
-		}
-		if len(prompt) > 70 {
-			prompt = prompt[:67] + "..."
-		}
-		if isPrompt && prompt != "" {
-			prompt = "\"" + prompt + "\""
-		}
-
-		phase := flashPhase(now, flashUntil[s.SessionID])
-
-		rows = append(rows, sessionRow{
-			connector:       lipgloss.NewStyle().Faint(true).Render(connector),
-			shortID:         lipgloss.NewStyle().Faint(true).Render(shortID),
-			status:          style.Render(indicator + " " + label),
-			detail:          detail,
-			elapsed:         lipgloss.NewStyle().Faint(true).Render(elapsed),
-			rawLastActivity: s.LastActivity,
-			prompt:          prompt,
-			isLast:          isLast,
-			flashPhase:      phase,
-		})
+		rows = append(rows, NewSessionRow(s, isLast, sp, flashUntil))
 	}
 	return rows
 }
 
 // computeWidths calculates column widths across all rows globally.
-func computeWidths(allRows []sessionRow) columnWidths {
+func computeWidths(allRows []SessionRow) columnWidths {
 	w := columnWidths{status: 12} // fixed minimum to prevent spinner jitter
 	for _, r := range allRows {
-		w.conn = max(w.conn, lipgloss.Width(r.connector))
-		w.id = max(w.id, lipgloss.Width(r.shortID))
-		w.status = max(w.status, lipgloss.Width(r.status))
-		w.detail = max(w.detail, lipgloss.Width(r.detail))
+		rw := r.Widths()
+		w.conn = max(w.conn, rw.conn)
+		w.id = max(w.id, rw.id)
+		w.status = max(w.status, rw.status)
+		w.detail = max(w.detail, rw.detail)
 	}
 	return w
 }
 
-func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths) string {
+func renderProjectGroup(g session.ProjectGroup, rows []SessionRow, w columnWidths) string {
 	var b strings.Builder
 
 	dirName := filepath.Base(g.Project)
@@ -198,31 +142,7 @@ func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidth
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
 	for _, r := range rows {
-		elapsed := r.elapsed
-		if r.flashPhase == 1 {
-			elapsed = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("9")). // bright red
-				Bold(true).
-				Render(session.TimeSince(r.rawLastActivity))
-		} else if r.flashPhase == 2 {
-			elapsed = lipgloss.NewStyle().Faint(true).
-				Render(session.TimeSince(r.rawLastActivity))
-		}
-
-		line := padRight(r.connector, w.conn) + " " +
-			padRight(r.shortID, w.id) + "  " +
-			padRight(r.status, w.status) + "  " +
-			padRight(r.detail, w.detail) + "  " +
-			elapsed
-		b.WriteString(line + "\n")
-
-		if r.prompt != "" {
-			indent := lipgloss.NewStyle().Faint(true).Render("│") + "  "
-			if r.isLast {
-				indent = "   "
-			}
-			b.WriteString(indent + promptStyle.Render(r.prompt) + "\n")
-		}
+		b.WriteString(r.Render(w))
 	}
 
 	return b.String()
@@ -300,23 +220,4 @@ func buildClickMap(sessions []session.Session, view string) map[int]string {
 	}
 
 	return clickMap
-}
-
-func statusDisplay(status string, sp spinner.Model) (indicator string, style lipgloss.Style, label string) {
-	switch status {
-	case "working":
-		return sp.View(), workingStyle, "Working"
-	case "waiting":
-		return "◆", waitingStyle, "Waiting"
-	case "idle":
-		return "○", idleStyle, "Idle"
-	case "starting":
-		return "◌", startingStyle, "Started"
-	case "exited":
-		return "✕", exitedStyle, "Exited"
-	case "ended":
-		return "─", idleStyle, "Ended"
-	default:
-		return "?", idleStyle, status
-	}
 }
