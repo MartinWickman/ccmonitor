@@ -98,8 +98,28 @@ The monitor supports click-to-switch for both tmux panes and Windows Terminal ta
 
 Detection priority (via env vars): `$TMUX_PANE` and `$WT_SESSION` are checked independently, so both can be captured when tmux runs inside WT.
 
+## Plugin distribution
+
+ccmonitor is packaged as a Claude Code plugin for clean hook registration across platforms.
+
+```
+plugin/
+├── .claude-plugin/
+│   └── plugin.json        # Plugin manifest (name, version, description)
+└── hooks/
+    └── hooks.json         # Hook registrations for all 7 lifecycle events
+```
+
+Hooks call `ccmonitor hook` directly — no shell wrapper scripts, no bash dependency. This works on Windows, Linux, and macOS as long as the `ccmonitor` binary is on PATH.
+
+**Install**: `/plugin install ./plugin` (or from a published URL)
+**Uninstall**: `/plugin uninstall ccmonitor`
+
+The plugin only registers hooks. The `ccmonitor` binary must be installed separately (via `go install`, GitHub releases, or a package manager).
+
 ## Tech stack
 
 - **Hook handler**: Go — compiled into the same `ccmonitor` binary, invoked as `ccmonitor hook`
 - **Monitor CLI**: Go — compiles to a single binary, no runtime dependency for users
+- **Plugin**: Claude Code plugin format — declarative hook registration, no shell scripts
 - **Future GUI**: TBD — reads the same session files, independent of the CLI

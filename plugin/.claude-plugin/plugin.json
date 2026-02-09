@@ -1,0 +1,6 @@
+{
+  "name": "ccmonitor",
+  "version": "1.0.0",
+  "description": "Monitor all running Claude Code instances in a single live-updating view",
+  "hooks": "./hooks/hooks.json"
+}

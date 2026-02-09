@@ -6,46 +6,35 @@ A terminal dashboard for monitoring multiple concurrent Claude Code instances ac
 
 ccmonitor has two components:
 
-1. **Hook handler** (`hooks/ccmonitor-hook.sh`) — A Bash script invoked by Claude Code hooks on lifecycle events. It reads JSON from stdin and writes a status file per session to `~/.ccmonitor/sessions/`.
+1. **Hook handler** (`ccmonitor hook`) — Invoked by Claude Code hooks on lifecycle events. Reads JSON from stdin and writes a status file per session to `~/.ccmonitor/sessions/`.
 
-2. **Monitor CLI** (`ccmonitor`) — A Go program that reads the session files and renders a live-updating terminal display using Bubble Tea. Sessions are grouped by project, color-coded by status, and clickable for tmux pane switching.
+2. **Monitor CLI** (`ccmonitor`) — Reads the session files and renders a live-updating terminal display using Bubble Tea. Sessions are grouped by project, color-coded by status, and clickable for tmux pane / Windows Terminal tab switching.
 
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.24+
-- [jq](https://jqlang.github.io/jq/)
+- [Go](https://go.dev/) 1.24+ (for building from source)
 
 ## Install
 
-Build and install the monitor:
+Build and install the binary:
 
 ```sh
 go install github.com/martinwickman/ccmonitor/cmd/ccmonitor@latest
 ```
 
-Create the sessions directory:
+Register the hooks by installing the Claude Code plugin:
 
-```sh
-mkdir -p ~/.ccmonitor/sessions
+```
+/plugin install ./plugin
 ```
 
-Add hooks to `~/.claude/settings.json` (merge with any existing hooks):
+This registers hooks for all 7 Claude Code lifecycle events. No manual `settings.json` editing needed.
 
-```json
-{
-  "hooks": {
-    "SessionStart": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "UserPromptSubmit": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "PreToolUse": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "PostToolUse": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "Notification": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "Stop": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }],
-    "SessionEnd": [{ "type": "command", "command": "/path/to/ccmonitor-hook.sh" }]
-  }
-}
+To uninstall the plugin:
+
 ```
-
-Replace `/path/to/ccmonitor-hook.sh` with the absolute path to the hook script.
+/plugin uninstall ccmonitor
+```
 
 ## Usage
 
@@ -58,8 +47,12 @@ ccmonitor
 Print a one-time snapshot and exit:
 
 ```sh
-ccmonitor -once
+ccmonitor --once
 ```
 
 - Press `q` or `Ctrl+C` to quit the live monitor.
-- Click a session to switch to its tmux pane (when running inside tmux).
+- Click a session to switch to its tmux pane or Windows Terminal tab.
+
+## Platform support
+
+ccmonitor works on Windows, Linux, and macOS. The plugin hooks call `ccmonitor hook` directly with no shell dependency.

@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }],
+    "SessionEnd": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ccmonitor hook" }] }]
+  }
+}
