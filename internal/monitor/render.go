@@ -137,7 +137,7 @@ func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidth
 	var b strings.Builder
 
 	dirName := filepath.Base(g.Project)
-	title := projectStyle.Render(dirName+"/") + " " + projectPathStyle.Render(g.Project)
+	title := projectStyle.Render(dirName) + " " + projectPathStyle.Render(g.Project)
 	b.WriteString(title + "\n")
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
