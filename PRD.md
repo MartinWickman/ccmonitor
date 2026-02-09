@@ -62,7 +62,7 @@ The `last_prompt` field is captured from the `UserPromptSubmit` hook and gives a
 
 The monitor checks whether each session's PID is still alive. If a process has died (e.g. terminal was closed), the session is shown as "exited" in the display.
 
-Cleanup of stale session files is handled by the hook handler itself: the `SessionEnd` hook deletes its own session file and scans for other files with dead PIDs. The `SessionStart` hook does the same scan. This means crashed sessions get cleaned up the next time any Claude Code session starts or ends, with no daemon or manual intervention needed.
+Cleanup of stale session files is handled by the hook handler itself: the `SessionEnd` hook deletes its own session file and scans for other files with dead PIDs. The `SessionStart` hook does the same scan. Additionally, every hook event that writes a session file first removes other files sharing the same PID, since a Claude Code process only has one active session at a time. This handles cases like `/clear` or `--continue`/`--resume` where a new session starts without a clean `SessionEnd` for the old one. No daemon, no cron, no manual intervention needed.
 
 ### Status File Integrity
 

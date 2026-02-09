@@ -26,6 +26,7 @@ type hookInput struct {
 	Prompt           string          `json:"prompt"`
 	Message          string          `json:"message"`
 	Title            string          `json:"title"`
+	Source           string          `json:"source"`
 }
 
 func mapEvent(event, toolDetail, notifType, title, message string) (status, detail string) {
@@ -305,6 +306,35 @@ func findParentPID() int {
 	return gpid
 }
 
+// cleanupSamePID removes session files that share a PID with the current session
+// but have a different session ID. This handles the case where Claude Code starts
+// a new session (e.g. via /clear) without firing SessionEnd for the old one.
+func cleanupSamePID(dir, currentSessionID string, currentPID int) {
+	if currentPID <= 0 {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		s, err := session.LoadFile(path)
+		if err != nil {
+			continue
+		}
+		if s.SessionID == currentSessionID {
+			continue // don't remove our own file
+		}
+		if s.PID == currentPID {
+			os.Remove(path)
+		}
+	}
+}
+
 // cleanupDead removes session files whose PID is no longer alive.
 // Files with PID 0 (legacy or unknown) and corrupt files are skipped.
 func cleanupDead(dir string) error {
@@ -438,6 +468,10 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 		RuntimeID:        runtimeID,
 		PID:              pid,
 	}
+
+	// Remove stale session files from the same PID (handles --continue/--resume
+	// where SessionStart fires with a new ID but events continue under the old ID)
+	cleanupSamePID(dir, input.SessionID, pid)
 
 	return writeSessionFile(sessionFile, s)
 }

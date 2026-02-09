@@ -739,3 +739,129 @@ func TestCleanupDead(t *testing.T) {
 		}
 	})
 }
+
+func TestCleanupSamePID(t *testing.T) {
+	t.Run("removes other session files with same PID", func(t *testing.T) {
+		dir := t.TempDir()
+		// Old session from the same Claude Code process
+		old := session.Session{SessionID: "old-session", Project: "/p", Status: "idle", PID: 12345}
+		data, _ := json.Marshal(old)
+		os.WriteFile(filepath.Join(dir, "old-session.json"), data, 0644)
+
+		cleanupSamePID(dir, "new-session", 12345)
+
+		if _, err := os.Stat(filepath.Join(dir, "old-session.json")); !os.IsNotExist(err) {
+			t.Error("old session with same PID should have been removed")
+		}
+	})
+
+	t.Run("keeps session files with different PID", func(t *testing.T) {
+		dir := t.TempDir()
+		other := session.Session{SessionID: "other", Project: "/p", Status: "working", PID: 99999}
+		data, _ := json.Marshal(other)
+		os.WriteFile(filepath.Join(dir, "other.json"), data, 0644)
+
+		cleanupSamePID(dir, "new-session", 12345)
+
+		if _, err := os.Stat(filepath.Join(dir, "other.json")); err != nil {
+			t.Error("session with different PID should have been kept")
+		}
+	})
+
+	t.Run("does not remove own session file", func(t *testing.T) {
+		dir := t.TempDir()
+		own := session.Session{SessionID: "my-session", Project: "/p", Status: "starting", PID: 12345}
+		data, _ := json.Marshal(own)
+		os.WriteFile(filepath.Join(dir, "my-session.json"), data, 0644)
+
+		cleanupSamePID(dir, "my-session", 12345)
+
+		if _, err := os.Stat(filepath.Join(dir, "my-session.json")); err != nil {
+			t.Error("own session file should not be removed")
+		}
+	})
+
+	t.Run("no-op when PID is zero", func(t *testing.T) {
+		dir := t.TempDir()
+		s := session.Session{SessionID: "s1", Project: "/p", PID: 0}
+		data, _ := json.Marshal(s)
+		os.WriteFile(filepath.Join(dir, "s1.json"), data, 0644)
+
+		cleanupSamePID(dir, "new-session", 0)
+
+		if _, err := os.Stat(filepath.Join(dir, "s1.json")); err != nil {
+			t.Error("files should be kept when currentPID is 0")
+		}
+	})
+}
+
+func TestContinueResumeCleansStaleSessions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+	// Simulate --continue/--resume: SessionStart created a file with session A and PID 42,
+	// but subsequent events use session B (the continued/old session ID) with the same PID.
+	stale := session.Session{SessionID: "session-a", Project: "/p", Status: "starting", PID: 42}
+	data, _ := json.Marshal(stale)
+	os.WriteFile(filepath.Join(dir, "session-a.json"), data, 0644)
+
+	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
+	pidFn := func() int { return 42 }
+
+	// Fire a UserPromptSubmit with a different session ID but same PID
+	input := `{"session_id":"session-b","cwd":"/tmp","hook_event_name":"UserPromptSubmit","prompt":"fix the bug"}`
+	err := run(strings.NewReader(input), stubTermInfo, pidFn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Stale session A should be cleaned up
+	if _, err := os.Stat(filepath.Join(dir, "session-a.json")); !os.IsNotExist(err) {
+		t.Error("stale session from --continue should have been removed")
+	}
+	// New session B should exist
+	if _, err := os.Stat(filepath.Join(dir, "session-b.json")); err != nil {
+		t.Error("continued session file should have been created")
+	}
+	// Verify session B has the correct content
+	data, _ = os.ReadFile(filepath.Join(dir, "session-b.json"))
+	var s session.Session
+	json.Unmarshal(data, &s)
+	if s.Status != "working" {
+		t.Errorf("status = %q, want %q", s.Status, "working")
+	}
+	if s.LastPrompt != "fix the bug" {
+		t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "fix the bug")
+	}
+	if s.PID != 42 {
+		t.Errorf("pid = %d, want 42", s.PID)
+	}
+}
+
+func TestSessionStartCleansSamePID(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+	// Old session from same process (PID 42)
+	old := session.Session{SessionID: "old1", Project: "/p", Status: "idle", PID: 42}
+	data, _ := json.Marshal(old)
+	os.WriteFile(filepath.Join(dir, "old1.json"), data, 0644)
+
+	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
+	pidFn := func() int { return 42 }
+
+	input := `{"session_id":"new1","cwd":"/tmp","hook_event_name":"SessionStart"}`
+	err := run(strings.NewReader(input), stubTermInfo, pidFn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Old session should be cleaned up
+	if _, err := os.Stat(filepath.Join(dir, "old1.json")); !os.IsNotExist(err) {
+		t.Error("old session with same PID should have been removed on SessionStart")
+	}
+	// New session should exist
+	if _, err := os.Stat(filepath.Join(dir, "new1.json")); err != nil {
+		t.Error("new session file should have been created")
+	}
+}
