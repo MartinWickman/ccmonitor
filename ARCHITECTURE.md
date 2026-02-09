@@ -112,7 +112,7 @@ plugin/
 
 Hooks call `ccmonitor hook` directly — no shell wrapper scripts, no bash dependency. This works on Windows, Linux, and macOS as long as the `ccmonitor` binary is on PATH.
 
-**Install**: `/plugin install ./plugin` (or from a published URL)
+**Install**: `/plugin marketplace add ./plugin` then `/plugin install ccmonitor`
 **Uninstall**: `/plugin uninstall ccmonitor`
 
 The plugin only registers hooks. The `ccmonitor` binary must be installed separately (via `go install`, GitHub releases, or a package manager).

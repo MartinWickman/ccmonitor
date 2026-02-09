@@ -25,7 +25,8 @@ go install github.com/martinwickman/ccmonitor/cmd/ccmonitor@latest
 Register the hooks by installing the Claude Code plugin:
 
 ```
-/plugin install ./plugin
+/plugin marketplace add ./plugin
+/plugin install ccmonitor
 ```
 
 This registers hooks for all 7 Claude Code lifecycle events. No manual `settings.json` editing needed.
