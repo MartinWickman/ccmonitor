@@ -45,10 +45,16 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 		detail = detail[:37] + "..."
 	}
 
+	// Treat default "Claude Code" tab title as empty — it's not useful.
+	summary := s.Summary
+	if summary == "Claude Code" {
+		summary = ""
+	}
+
 	var prompt string
 	isPrompt := false
 	if showSummary {
-		prompt = s.Summary
+		prompt = summary
 		if prompt == "" {
 			prompt = s.LastPrompt
 			isPrompt = true
@@ -57,7 +63,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 		prompt = s.LastPrompt
 		isPrompt = true
 		if prompt == "" {
-			prompt = s.Summary
+			prompt = summary
 			isPrompt = false
 		}
 	}
