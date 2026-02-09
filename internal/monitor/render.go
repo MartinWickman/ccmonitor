@@ -13,7 +13,7 @@ import (
 
 // columnWidths holds the computed widths for each column.
 type columnWidths struct {
-	conn, id, status, detail int
+	conn, status, detail int
 }
 
 // RenderOnce produces a single snapshot of the current sessions for non-interactive output.
@@ -126,7 +126,6 @@ func computeWidths(allRows []sessionRow) columnWidths {
 	for _, r := range allRows {
 		rw := r.widths()
 		w.conn = max(w.conn, rw.conn)
-		w.id = max(w.id, rw.id)
 		w.status = max(w.status, rw.status)
 		w.detail = max(w.detail, rw.detail)
 	}

@@ -83,8 +83,8 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 	}
 }
 
-// render produces the full output for this row: the main status line plus
-// the optional prompt line below it.
+// render produces the full output for this row: line 1 is the prompt/summary
+// with session ID, line 2 is the status/detail/elapsed.
 func (r sessionRow) render(w columnWidths) string {
 	elapsed := r.elapsed
 	if r.flashPhase == 1 {
@@ -97,21 +97,27 @@ func (r sessionRow) render(w columnWidths) string {
 			Render(session.TimeSince(r.rawLastActivity))
 	}
 
-	line := padRight(r.connector, w.conn) + " " +
-		padRight(r.shortID, w.id) + "  " +
-		padRight(r.status, w.status) + "  " +
-		padRight(r.detail, w.detail) + "  " +
-		elapsed + "\n"
-
+	// Line 1: connector + prompt/summary (shortID) — or just connector + shortID
+	var line1 string
 	if r.prompt != "" {
-		indent := lipgloss.NewStyle().Faint(true).Render("│") + "  "
-		if r.isLast {
-			indent = "   "
-		}
-		line += indent + promptStyle.Render(r.prompt) + "\n"
+		line1 = padRight(r.connector, w.conn) + " " +
+			promptStyle.Render(r.prompt) + " " +
+			lipgloss.NewStyle().Faint(true).Render("("+r.shortID+")")
+	} else {
+		line1 = padRight(r.connector, w.conn) + " " + r.shortID
 	}
 
-	return line
+	// Line 2: indent + status + detail + elapsed
+	indent := lipgloss.NewStyle().Faint(true).Render("│") + "  "
+	if r.isLast {
+		indent = "   "
+	}
+	line2 := indent +
+		padRight(r.status, w.status) + "  " +
+		padRight(r.detail, w.detail) + "  " +
+		elapsed
+
+	return line1 + "\n" + line2 + "\n"
 }
 
 // padRight pads a string (which may contain ANSI codes) to the given visible width.
@@ -127,7 +133,6 @@ func padRight(s string, width int) string {
 func (r sessionRow) widths() columnWidths {
 	return columnWidths{
 		conn:   lipgloss.Width(r.connector),
-		id:     lipgloss.Width(r.shortID),
 		status: lipgloss.Width(r.status),
 		detail: lipgloss.Width(r.detail),
 	}

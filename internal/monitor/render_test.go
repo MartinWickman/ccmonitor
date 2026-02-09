@@ -47,24 +47,28 @@ func TestBuildClickMap(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header\nsummary\n├─ abcd1234  Working\n"
+		view := "header\nsummary\n├─ Fix the bug (abcd1234)\n   Working  Edit main.go\n"
 		got := buildClickMap(sessions, view)
 		if got[2] != "abcd1234-full-id" {
 			t.Errorf("line 2: got %q, want %q", got[2], "abcd1234-full-id")
 		}
+		// Status line below should also be mapped
+		if got[3] != "abcd1234-full-id" {
+			t.Errorf("line 3: got %q, want %q", got[3], "abcd1234-full-id")
+		}
 	})
 
-	t.Run("line after session row should be mapped as prompt line", func(t *testing.T) {
+	t.Run("status line below ID line should be mapped", func(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header\n├─ abcd1234  Working\n   Fix the bug\nfooter\n"
+		view := "header\n├─ abcd1234\n   Working  Edit main.go\nfooter\n"
 		got := buildClickMap(sessions, view)
 		if got[1] != "abcd1234-full-id" {
-			t.Errorf("session row line 1: got %q, want %q", got[1], "abcd1234-full-id")
+			t.Errorf("ID line 1: got %q, want %q", got[1], "abcd1234-full-id")
 		}
 		if got[2] != "abcd1234-full-id" {
-			t.Errorf("prompt line 2: got %q, want %q", got[2], "abcd1234-full-id")
+			t.Errorf("status line 2: got %q, want %q", got[2], "abcd1234-full-id")
 		}
 	})
 
@@ -73,13 +77,20 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "aaaaaaaa-1111", Project: "/p"},
 			{SessionID: "bbbbbbbb-2222", Project: "/p"},
 		}
-		view := "header\n├─ aaaaaaaa  Working\n└─ bbbbbbbb  Idle\nfooter\n"
+		// Each session now takes 2 lines: ID line + status line
+		view := "header\n├─ aaaaaaaa\n│  Working\n└─ bbbbbbbb\n   Idle\nfooter\n"
 		got := buildClickMap(sessions, view)
 		if got[1] != "aaaaaaaa-1111" {
 			t.Errorf("line 1: got %q, want %q", got[1], "aaaaaaaa-1111")
 		}
-		if got[2] != "bbbbbbbb-2222" {
-			t.Errorf("line 2: got %q, want %q", got[2], "bbbbbbbb-2222")
+		if got[2] != "aaaaaaaa-1111" {
+			t.Errorf("line 2: got %q, want %q", got[2], "aaaaaaaa-1111")
+		}
+		if got[3] != "bbbbbbbb-2222" {
+			t.Errorf("line 3: got %q, want %q", got[3], "bbbbbbbb-2222")
+		}
+		if got[4] != "bbbbbbbb-2222" {
+			t.Errorf("line 4: got %q, want %q", got[4], "bbbbbbbb-2222")
 		}
 	})
 
@@ -87,7 +98,7 @@ func TestBuildClickMap(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header line\nproject title\n├─ abcd1234  Working\n"
+		view := "header line\nproject title\n├─ abcd1234\n   Working\n"
 		got := buildClickMap(sessions, view)
 		if _, ok := got[0]; ok {
 			t.Errorf("header line should not be mapped")

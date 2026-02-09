@@ -36,7 +36,7 @@ func TestSessionRowRender(t *testing.T) {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
 
-	t.Run("render produces status line and prompt line", func(t *testing.T) {
+	t.Run("render produces prompt line then status line", func(t *testing.T) {
 		s := session.Session{
 			SessionID:    "abcd1234-full-session-id",
 			Project:      "/home/user/project",
@@ -46,28 +46,33 @@ func TestSessionRowRender(t *testing.T) {
 			LastActivity: time.Now().Add(-2 * time.Minute).Format(time.RFC3339),
 		}
 		row := newSessionRow(s, true, sp, nil, true)
-		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
+		w := columnWidths{conn: 4, status: 12, detail: 20}
 		output := row.render(w)
 
-		if !strings.Contains(output, "abcd1234") {
-			t.Error("output should contain truncated session ID")
+		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+		if len(lines) != 2 {
+			t.Errorf("expected 2 lines, got %d", len(lines))
 		}
-		if !strings.Contains(output, "Idle") {
-			t.Error("output should contain status label")
+		// Line 1 should have prompt and shortID in parens
+		if !strings.Contains(lines[0], "Fix the bug") {
+			t.Error("line 1 should contain prompt text")
 		}
-		if !strings.Contains(output, "Finished responding") {
-			t.Error("output should contain detail text")
+		if !strings.Contains(lines[0], "(abcd1234)") {
+			t.Error("line 1 should contain session ID in parens")
 		}
-		if !strings.Contains(output, "Fix the bug") {
-			t.Error("output should contain last prompt")
+		// Line 2 should have status and detail
+		if !strings.Contains(lines[1], "Idle") {
+			t.Error("line 2 should contain status label")
 		}
-		// Should end with newline
+		if !strings.Contains(lines[1], "Finished responding") {
+			t.Error("line 2 should contain detail text")
+		}
 		if !strings.HasSuffix(output, "\n") {
 			t.Error("output should end with newline")
 		}
 	})
 
-	t.Run("render without prompt produces single line", func(t *testing.T) {
+	t.Run("render without prompt shows ID on line 1 and status on line 2", func(t *testing.T) {
 		s := session.Session{
 			SessionID:    "abcd1234-full-session-id",
 			Project:      "/home/user/project",
@@ -76,12 +81,18 @@ func TestSessionRowRender(t *testing.T) {
 			LastActivity: time.Now().Format(time.RFC3339),
 		}
 		row := newSessionRow(s, false, sp, nil, true)
-		w := columnWidths{conn: 4, id: 10, status: 12, detail: 20}
+		w := columnWidths{conn: 4, status: 12, detail: 20}
 		output := row.render(w)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
-		if len(lines) != 1 {
-			t.Errorf("expected 1 line, got %d", len(lines))
+		if len(lines) != 2 {
+			t.Errorf("expected 2 lines, got %d", len(lines))
+		}
+		if !strings.Contains(lines[0], "abcd1234") {
+			t.Error("line 1 should contain truncated session ID")
+		}
+		if !strings.Contains(lines[1], "Edit main.go") {
+			t.Error("line 2 should contain detail text")
 		}
 	})
 }
