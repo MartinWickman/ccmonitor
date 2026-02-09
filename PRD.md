@@ -54,20 +54,7 @@ Claude Code supports user-defined hooks that execute at specific lifecycle point
 
 Each hook invocation receives JSON on stdin containing `session_id`, `cwd` (project directory), `hook_event_name`, and event-specific fields like `tool_name` and `tool_input`.
 
-The hook handler writes a status file per session to `~/.ccmonitor/sessions/<session_id>.json`:
-
-```json
-{
-  "session_id": "abc123",
-  "project": "/home/user/myproject",
-  "status": "working",
-  "detail": "Edit src/main.py",
-  "last_prompt": "Write a book about Go programming",
-  "notification_type": null,
-  "last_activity": "2026-02-02T14:30:00Z",
-  "pid": 12345
-}
-```
+The hook handler writes a status file per session to `~/.ccmonitor/sessions/<session_id>.json`.
 
 The `last_prompt` field is captured from the `UserPromptSubmit` hook and gives a rough indication of what the session is working on. It persists across tool calls until the user sends a new prompt.
 
@@ -144,19 +131,6 @@ Additional display features:
 - Clean exit on q or Ctrl+C
 
 ## Distribution
-
-The project will be open source on GitHub, packaged for easy installation by any developer. Installation should:
-
-1. Install the hook handler and monitor as CLI commands
-2. Add hook configuration to `~/.claude/settings.json` (merging with existing hooks, not overwriting)
-3. Create the `~/.ccmonitor/sessions/` directory
-
-An uninstall command should cleanly remove the hooks from settings and optionally remove the sessions directory.
-
-The packaging approach depends on the chosen tech stack:
-- **Python**: publish to PyPI, install via `pip install ccmonitor` or `pipx install ccmonitor`
-- **Go**: single binary, distribute via GitHub releases and `go install`
-- **Node/TypeScript**: publish to npm, install via `npm install -g ccmonitor`
 
 ## Future Directions
 
