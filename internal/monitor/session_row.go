@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 type sessionRow struct {
 	connector       string
 	shortID         string
+	pid             int
 	status          string
 	detail          string
 	elapsed         string
@@ -79,6 +81,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 	return sessionRow{
 		connector:       lipgloss.NewStyle().Faint(true).Render(connector),
 		shortID:         lipgloss.NewStyle().Faint(true).Render(shortID),
+		pid:             s.PID,
 		status:          style.Render(indicator + " " + label),
 		detail:          detail,
 		elapsed:         lipgloss.NewStyle().Faint(true).Render(elapsed),
@@ -103,14 +106,20 @@ func (r sessionRow) render(w columnWidths) string {
 			Render(session.TimeSince(r.rawLastActivity))
 	}
 
-	// Line 1: connector + prompt/summary (shortID) — or just connector + shortID
+	// Line 1: connector + prompt/summary (shortID:PID) — or just connector + shortID:PID
+	idPart := r.shortID
+	if r.pid > 0 {
+		idPart += ":" + fmt.Sprintf("%d", r.pid)
+	}
+	faintID := lipgloss.NewStyle().Faint(true).Render(idPart)
+
 	var line1 string
 	if r.prompt != "" {
 		line1 = padRight(r.connector, w.conn) + " " +
 			promptStyle.Render(r.prompt) + " " +
-			lipgloss.NewStyle().Faint(true).Render("("+r.shortID+")")
+			lipgloss.NewStyle().Faint(true).Render("("+idPart+")")
 	} else {
-		line1 = padRight(r.connector, w.conn) + " " + r.shortID
+		line1 = padRight(r.connector, w.conn) + " " + faintID
 	}
 
 	// Line 2: indent + status + detail + elapsed
