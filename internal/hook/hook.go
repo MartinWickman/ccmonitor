@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	ps "github.com/mitchellh/go-ps"
+
 	"github.com/martinwickman/ccmonitor/internal/session"
 )
 
@@ -221,12 +223,66 @@ func writeSessionFile(path string, s session.Session) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// Run is the entry point called from main.go. It reads hook input from stdin.
-func Run() error {
-	return run(os.Stdin, defaultTermInfo)
+// findParentPID walks up from our parent to find the grandparent PID (Claude Code).
+// Hooks are spawned as: Claude Code → shell (/bin/sh -c) → ccmonitor hook.
+// Returns 0 if the process tree cannot be walked.
+func findParentPID() int {
+	ppid := os.Getppid()
+	if ppid <= 0 {
+		return 0
+	}
+	parent, err := ps.FindProcess(ppid)
+	if err != nil || parent == nil {
+		return 0
+	}
+	gpid := parent.PPid()
+	if gpid <= 0 {
+		return 0
+	}
+	return gpid
 }
 
-func run(stdin io.Reader, termInfoFn func(string, string) termInfo) error {
+// cleanupDead removes session files whose PID is no longer alive.
+// Files with PID 0 (legacy or unknown) and corrupt files are skipped.
+func cleanupDead(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading sessions dir: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		s, err := session.LoadFile(path)
+		if err != nil {
+			continue // skip corrupt files
+		}
+		if s.PID <= 0 {
+			continue // no PID recorded, can't check
+		}
+		proc, err := ps.FindProcess(s.PID)
+		if err != nil {
+			continue // can't check, leave it
+		}
+		if proc == nil {
+			// Process is dead, remove the session file
+			os.Remove(path)
+		}
+	}
+	return nil
+}
+
+// Run is the entry point called from main.go. It reads hook input from stdin.
+func Run() error {
+	return run(os.Stdin, defaultTermInfo, findParentPID)
+}
+
+func run(stdin io.Reader, termInfoFn func(string, string) termInfo, pidFn func() int) error {
 	dir := session.Dir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating sessions dir: %w", err)
@@ -244,16 +300,16 @@ func run(stdin io.Reader, termInfoFn func(string, string) termInfo) error {
 
 	sessionFile := filepath.Join(dir, input.SessionID+".json")
 
-	// SessionEnd: cleanup stale files, delete own file, return
+	// SessionEnd: cleanup dead sessions, delete own file, return
 	if input.HookEventName == "SessionEnd" {
-		session.CleanupStale(dir)
+		cleanupDead(dir)
 		os.Remove(sessionFile)
 		return nil
 	}
 
-	// SessionStart: cleanup stale files
+	// SessionStart: cleanup dead sessions
 	if input.HookEventName == "SessionStart" {
-		session.CleanupStale(dir)
+		cleanupDead(dir)
 	}
 
 	// Skip non-actionable notifications (e.g. idle_prompt after ~60s inactivity).
@@ -296,6 +352,12 @@ func run(stdin io.Reader, termInfoFn func(string, string) termInfo) error {
 		notifType = &input.NotificationType
 	}
 
+	// Capture PID: use pidFn on SessionStart, preserve from existing otherwise
+	pid := pidFn()
+	if pid == 0 && input.HookEventName != "SessionStart" {
+		pid = existing.PID
+	}
+
 	s := session.Session{
 		SessionID:        input.SessionID,
 		Project:          input.CWD,
@@ -307,6 +369,7 @@ func run(stdin io.Reader, termInfoFn func(string, string) termInfo) error {
 		TmuxPane:         ti.tmuxPane,
 		Summary:          ti.summary,
 		RuntimeID:        runtimeID,
+		PID:              pid,
 	}
 
 	return writeSessionFile(sessionFile, s)

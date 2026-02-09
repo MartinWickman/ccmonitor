@@ -214,13 +214,14 @@ func TestReadExistingSession(t *testing.T) {
 
 func TestRun(t *testing.T) {
 	stubTermInfo := func(string, string) termInfo { return termInfo{} }
+	stubPidFn := func() int { return 42 }
 
 	t.Run("PreToolUse writes session file", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
 		input := `{"session_id":"s1","cwd":"/tmp/proj","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls -la"}}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -252,7 +253,7 @@ func TestRun(t *testing.T) {
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
 		input := `{"session_id":"s2","cwd":"/tmp","hook_event_name":"UserPromptSubmit","prompt":"fix the bug"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -282,7 +283,7 @@ func TestRun(t *testing.T) {
 
 		// Then: send a Stop event (should preserve last_prompt)
 		input := `{"session_id":"s3","cwd":"/tmp","hook_event_name":"Stop"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -303,7 +304,7 @@ func TestRun(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, "s4.json"), []byte(`{"session_id":"s4"}`), 0644)
 
 		input := `{"session_id":"s4","cwd":"/tmp","hook_event_name":"SessionEnd"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -313,30 +314,29 @@ func TestRun(t *testing.T) {
 		}
 	})
 
-	t.Run("SessionStart cleans up stale files", func(t *testing.T) {
+	t.Run("SessionStart cleans up dead PID files", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		// Create a stale session file
-		staleTime := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
-		stale := session.Session{
-			SessionID:    "stale1",
-			Project:      "/p",
-			Status:       "idle",
-			LastActivity: staleTime,
+		// Create a session file with a dead PID (99999999 should not exist)
+		dead := session.Session{
+			SessionID: "dead1",
+			Project:   "/p",
+			Status:    "idle",
+			PID:       99999999,
 		}
-		data, _ := json.Marshal(stale)
-		os.WriteFile(filepath.Join(dir, "stale1.json"), data, 0644)
+		data, _ := json.Marshal(dead)
+		os.WriteFile(filepath.Join(dir, "dead1.json"), data, 0644)
 
 		input := `{"session_id":"s5","cwd":"/tmp","hook_event_name":"SessionStart"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Stale file should be cleaned up
-		if _, err := os.Stat(filepath.Join(dir, "stale1.json")); !os.IsNotExist(err) {
-			t.Error("stale session file should have been deleted")
+		// Dead PID file should be cleaned up
+		if _, err := os.Stat(filepath.Join(dir, "dead1.json")); !os.IsNotExist(err) {
+			t.Error("dead PID session file should have been deleted")
 		}
 		// New session file should exist
 		if _, err := os.Stat(filepath.Join(dir, "s5.json")); err != nil {
@@ -349,7 +349,7 @@ func TestRun(t *testing.T) {
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
 		input := `{"session_id":"s6","cwd":"/tmp","hook_event_name":"Notification","notification_type":"permission_prompt"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -382,7 +382,7 @@ func TestRun(t *testing.T) {
 
 		// Send idle_prompt notification — should be a no-op
 		input := `{"session_id":"s-idle","cwd":"/tmp","hook_event_name":"Notification","notification_type":"idle_prompt"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -401,7 +401,7 @@ func TestRun(t *testing.T) {
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
 		input := `{"session_id":"s-perm","cwd":"/tmp","hook_event_name":"Notification","notification_type":"permission_prompt","title":"Allow Bash?","message":"Claude wants to run: rm -rf /tmp/foo"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -422,7 +422,7 @@ func TestRun(t *testing.T) {
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
 		input := `{"session_id":"s7","cwd":"/tmp","hook_event_name":"SomeFutureEvent"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -440,7 +440,7 @@ func TestRun(t *testing.T) {
 			return termInfo{tmuxPane: "%5", summary: "my project"}
 		}
 		input := `{"session_id":"s8","cwd":"/tmp","hook_event_name":"Stop"}`
-		err := run(strings.NewReader(input), tmuxFn)
+		err := run(strings.NewReader(input), tmuxFn, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -467,7 +467,7 @@ func TestRun(t *testing.T) {
 			return termInfo{}
 		}
 		input := `{"session_id":"s-wt","cwd":"/tmp","hook_event_name":"SessionStart"}`
-		err := run(strings.NewReader(input), wtFn)
+		err := run(strings.NewReader(input), wtFn, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -498,7 +498,7 @@ func TestRun(t *testing.T) {
 
 		// Send a Stop event — RuntimeID should be preserved
 		input := `{"session_id":"s-wt2","cwd":"/tmp","hook_event_name":"Stop"}`
-		err := run(strings.NewReader(input), stubTermInfo)
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -511,6 +511,142 @@ func TestRun(t *testing.T) {
 		}
 		if s.LastPrompt != "do stuff" {
 			t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "do stuff")
+		}
+	})
+
+	t.Run("PID is captured in session file", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		customPidFn := func() int { return 12345 }
+		input := `{"session_id":"s-pid","cwd":"/tmp","hook_event_name":"SessionStart"}`
+		err := run(strings.NewReader(input), stubTermInfo, customPidFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s-pid.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.PID != 12345 {
+			t.Errorf("pid = %d, want 12345", s.PID)
+		}
+	})
+
+	t.Run("PID is preserved from existing file on subsequent events", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// Write existing session with PID
+		existing := session.Session{
+			SessionID: "s-pid2",
+			PID:       54321,
+		}
+		data, _ := json.Marshal(existing)
+		os.WriteFile(filepath.Join(dir, "s-pid2.json"), data, 0644)
+
+		// pidFn returns 0 (simulating inability to walk process tree)
+		zeroPidFn := func() int { return 0 }
+		input := `{"session_id":"s-pid2","cwd":"/tmp","hook_event_name":"Stop"}`
+		err := run(strings.NewReader(input), stubTermInfo, zeroPidFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ = os.ReadFile(filepath.Join(dir, "s-pid2.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.PID != 54321 {
+			t.Errorf("pid = %d, want 54321 (should be preserved)", s.PID)
+		}
+	})
+}
+
+func TestFindParentPID(t *testing.T) {
+	pid := findParentPID()
+	if pid <= 0 {
+		t.Errorf("findParentPID() = %d, want > 0", pid)
+	}
+}
+
+func TestCleanupDead(t *testing.T) {
+	t.Run("removes files with dead PIDs", func(t *testing.T) {
+		dir := t.TempDir()
+		dead := session.Session{
+			SessionID: "dead1",
+			Project:   "/p",
+			Status:    "working",
+			PID:       99999999,
+		}
+		data, _ := json.Marshal(dead)
+		os.WriteFile(filepath.Join(dir, "dead1.json"), data, 0644)
+
+		if err := cleanupDead(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "dead1.json")); !os.IsNotExist(err) {
+			t.Error("dead PID session file should have been removed")
+		}
+	})
+
+	t.Run("keeps files with alive PIDs", func(t *testing.T) {
+		dir := t.TempDir()
+		alive := session.Session{
+			SessionID: "alive1",
+			Project:   "/p",
+			Status:    "working",
+			PID:       os.Getpid(),
+		}
+		data, _ := json.Marshal(alive)
+		os.WriteFile(filepath.Join(dir, "alive1.json"), data, 0644)
+
+		if err := cleanupDead(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "alive1.json")); err != nil {
+			t.Error("alive PID session file should have been kept")
+		}
+	})
+
+	t.Run("keeps files with zero PID", func(t *testing.T) {
+		dir := t.TempDir()
+		noPid := session.Session{
+			SessionID: "nopid1",
+			Project:   "/p",
+			Status:    "working",
+			PID:       0,
+		}
+		data, _ := json.Marshal(noPid)
+		os.WriteFile(filepath.Join(dir, "nopid1.json"), data, 0644)
+
+		if err := cleanupDead(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "nopid1.json")); err != nil {
+			t.Error("zero PID session file should have been kept")
+		}
+	})
+
+	t.Run("skips corrupt files", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "corrupt.json"), []byte("{bad"), 0644)
+
+		if err := cleanupDead(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		entries, _ := os.ReadDir(dir)
+		if len(entries) != 1 {
+			t.Errorf("got %d files, want 1 (corrupt file should remain)", len(entries))
+		}
+	})
+
+	t.Run("nonexistent directory returns nil", func(t *testing.T) {
+		if err := cleanupDead("/nonexistent/path"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }

@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -93,6 +94,41 @@ func TestBuildClickMap(t *testing.T) {
 		}
 		if _, ok := got[1]; ok {
 			t.Errorf("project title should not be mapped")
+		}
+	})
+}
+
+func TestCheckPIDLiveness(t *testing.T) {
+	t.Run("dead PID sets status to exited", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "s1", Status: "working", PID: 99999999},
+		}
+		CheckPIDLiveness(sessions)
+		if sessions[0].Status != "exited" {
+			t.Errorf("status = %q, want %q", sessions[0].Status, "exited")
+		}
+		if sessions[0].Detail != "Process ended" {
+			t.Errorf("detail = %q, want %q", sessions[0].Detail, "Process ended")
+		}
+	})
+
+	t.Run("alive PID keeps original status", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "s2", Status: "working", PID: os.Getpid()},
+		}
+		CheckPIDLiveness(sessions)
+		if sessions[0].Status != "working" {
+			t.Errorf("status = %q, want %q", sessions[0].Status, "working")
+		}
+	})
+
+	t.Run("zero PID is left as-is", func(t *testing.T) {
+		sessions := []session.Session{
+			{SessionID: "s3", Status: "idle", PID: 0},
+		}
+		CheckPIDLiveness(sessions)
+		if sessions[0].Status != "idle" {
+			t.Errorf("status = %q, want %q", sessions[0].Status, "idle")
 		}
 	})
 }

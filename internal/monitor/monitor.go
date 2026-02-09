@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	ps "github.com/mitchellh/go-ps"
+
 	"github.com/martinwickman/ccmonitor/internal/session"
 	"github.com/martinwickman/ccmonitor/internal/switcher"
 )
@@ -52,9 +54,27 @@ type Model struct {
 	showSummary bool
 }
 
+// CheckPIDLiveness marks sessions with dead PIDs as "exited".
+func CheckPIDLiveness(sessions []session.Session) {
+	for i := range sessions {
+		if sessions[i].PID <= 0 {
+			continue
+		}
+		proc, err := ps.FindProcess(sessions[i].PID)
+		if err != nil {
+			continue
+		}
+		if proc == nil {
+			sessions[i].Status = "exited"
+			sessions[i].Detail = "Process ended"
+		}
+	}
+}
+
 // New creates a new monitor model that reads from the given directory.
 func New(sessionsDir string) Model {
 	sessions, _ := session.LoadAll(sessionsDir)
+	CheckPIDLiveness(sessions)
 
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
@@ -115,6 +135,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
+		CheckPIDLiveness(m.sessions)
 		// Build click map by scanning the actual rendered view for session IDs.
 		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary)
 		m.clickMap = buildClickMap(m.sessions, view)

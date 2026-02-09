@@ -9,14 +9,6 @@ import (
 	"time"
 )
 
-// staleThreshold is the duration after which inactive sessions are considered stale
-// and excluded from the monitor display.
-const staleThreshold = 1 * time.Hour
-
-// startingStaleThreshold is a shorter threshold for "starting" sessions, which are
-// likely orphaned from a resumed session that never received further hook events.
-const startingStaleThreshold = 2 * time.Minute
-
 // Session represents the state of a single Claude Code instance.
 type Session struct {
 	SessionID        string  `json:"session_id"`
@@ -29,6 +21,7 @@ type Session struct {
 	TmuxPane         string  `json:"tmux_pane"`
 	Summary          string  `json:"summary"`
 	RuntimeID        string  `json:"wt_tab_id,omitempty"`
+	PID              int     `json:"pid,omitempty"`
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.
@@ -47,7 +40,8 @@ func Dir() string {
 }
 
 // LoadAll reads all session JSON files from dir and returns the parsed sessions.
-// Corrupt or unreadable files are skipped silently.
+// Corrupt or unreadable files are skipped silently. PID liveness checking is the
+// caller's responsibility (see monitor package).
 func LoadAll(dir string) ([]Session, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -66,18 +60,6 @@ func LoadAll(dir string) ([]Session, error) {
 		s, err := loadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			continue // skip corrupt files
-		}
-
-		// Skip stale sessions (inactive for longer than staleThreshold)
-		if t, err := time.Parse(time.RFC3339, s.LastActivity); err == nil {
-			age := time.Since(t)
-			if age > staleThreshold {
-				continue
-			}
-			// "starting" sessions that haven't progressed are likely orphaned
-			if s.Status == "starting" && age > startingStaleThreshold {
-				continue
-			}
 		}
 
 		sessions = append(sessions, *s)
@@ -138,36 +120,9 @@ func TimeSince(timestamp string) string {
 	}
 }
 
-// CleanupStale removes session files with last_activity older than staleThreshold.
-// Returns nil if the directory does not exist.
-func CleanupStale(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading sessions dir: %w", err)
-	}
-
-	now := time.Now()
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		s, err := loadFile(path)
-		if err != nil {
-			continue // skip corrupt files
-		}
-		t, err := time.Parse(time.RFC3339, s.LastActivity)
-		if err != nil {
-			continue // skip unparseable timestamps
-		}
-		if now.Sub(t) > staleThreshold {
-			os.Remove(path)
-		}
-	}
-	return nil
+// LoadFile reads and parses a single session file. Exported for use by the hook package.
+func LoadFile(path string) (*Session, error) {
+	return loadFile(path)
 }
 
 func loadFile(path string) (*Session, error) {
