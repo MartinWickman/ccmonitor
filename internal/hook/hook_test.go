@@ -213,7 +213,7 @@ func TestReadExistingSession(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	stubTermInfo := func(string, string) termInfo { return termInfo{} }
+	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
 	stubPidFn := func() int { return 42 }
 
 	t.Run("PreToolUse writes session file", func(t *testing.T) {
@@ -436,7 +436,7 @@ func TestRun(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		tmuxFn := func(string, string) termInfo {
+		tmuxFn := func(string, string, string) termInfo {
 			return termInfo{tmuxPane: "%5", summary: "my project"}
 		}
 		input := `{"session_id":"s8","cwd":"/tmp","hook_event_name":"Stop"}`
@@ -460,9 +460,9 @@ func TestRun(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		wtFn := func(event, sid string) termInfo {
+		wtFn := func(event, sid, existingRID string) termInfo {
 			if event == "SessionStart" {
-				return termInfo{runtimeID: "42,17436612,4,279"}
+				return termInfo{runtimeID: "42,17436612,4,279", summary: "Claude Code"}
 			}
 			return termInfo{}
 		}
@@ -511,6 +511,95 @@ func TestRun(t *testing.T) {
 		}
 		if s.LastPrompt != "do stuff" {
 			t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "do stuff")
+		}
+	})
+
+	t.Run("WT tab title captured on SessionStart", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		wtFn := func(event, sid, existingRID string) termInfo {
+			if event == "SessionStart" {
+				return termInfo{runtimeID: "42,100,4,1", summary: "Working on auth"}
+			}
+			return termInfo{}
+		}
+		input := `{"session_id":"s-wt-title","cwd":"/tmp","hook_event_name":"SessionStart"}`
+		err := run(strings.NewReader(input), wtFn, stubPidFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ := os.ReadFile(filepath.Join(dir, "s-wt-title.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.Summary != "Working on auth" {
+			t.Errorf("summary = %q, want %q", s.Summary, "Working on auth")
+		}
+		if s.RuntimeID != "42,100,4,1" {
+			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,100,4,1")
+		}
+	})
+
+	t.Run("WT tab title updated on subsequent events", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		// Write existing session with RuntimeID
+		existing := session.Session{
+			SessionID: "s-wt-title2",
+			RuntimeID: "42,100,4,2",
+			Summary:   "Old title",
+		}
+		data, _ := json.Marshal(existing)
+		os.WriteFile(filepath.Join(dir, "s-wt-title2.json"), data, 0644)
+
+		// termInfoFn simulates looking up the new title using existingRID
+		wtFn := func(event, sid, existingRID string) termInfo {
+			if existingRID == "42,100,4,2" {
+				return termInfo{summary: "Updated title"}
+			}
+			return termInfo{}
+		}
+		input := `{"session_id":"s-wt-title2","cwd":"/tmp","hook_event_name":"Stop"}`
+		err := run(strings.NewReader(input), wtFn, stubPidFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ = os.ReadFile(filepath.Join(dir, "s-wt-title2.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.Summary != "Updated title" {
+			t.Errorf("summary = %q, want %q", s.Summary, "Updated title")
+		}
+		if s.RuntimeID != "42,100,4,2" {
+			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,100,4,2")
+		}
+	})
+
+	t.Run("summary preserved from existing file when termInfo returns empty", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
+
+		existing := session.Session{
+			SessionID: "s-sum",
+			Summary:   "Working on auth",
+		}
+		data, _ := json.Marshal(existing)
+		os.WriteFile(filepath.Join(dir, "s-sum.json"), data, 0644)
+
+		input := `{"session_id":"s-sum","cwd":"/tmp","hook_event_name":"Stop"}`
+		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		data, _ = os.ReadFile(filepath.Join(dir, "s-sum.json"))
+		var s session.Session
+		json.Unmarshal(data, &s)
+		if s.Summary != "Working on auth" {
+			t.Errorf("summary = %q, want %q", s.Summary, "Working on auth")
 		}
 	})
 

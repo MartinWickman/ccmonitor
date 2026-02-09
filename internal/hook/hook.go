@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	ps "github.com/mitchellh/go-ps"
 
@@ -124,6 +125,19 @@ func notificationDetail(notifType, title, message string) string {
 	return "Awaiting response"
 }
 
+// stripTitlePrefix removes leading non-alphanumeric characters from a tab/pane
+// title. Claude Code prefixes titles with status indicators like "✳ " but the
+// exact character varies by platform and encoding.
+func stripTitlePrefix(title string) string {
+	i := strings.IndexFunc(title, func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	})
+	if i > 0 {
+		return title[i:]
+	}
+	return title
+}
+
 // termInfo holds terminal environment info collected once per hook invocation.
 type termInfo struct {
 	tmuxPane  string
@@ -141,14 +155,15 @@ func tmuxInfo() (pane, title string) {
 		return pane, ""
 	}
 	title = strings.TrimSpace(string(out))
-	title = strings.TrimPrefix(title, "✳ ")
+	title = stripTitlePrefix(title)
 	return pane, title
 }
 
-// wtRuntimeID uses PowerShell and UI Automation to find the currently selected
-// tab in the foreground Windows Terminal window. Only called on SessionStart,
-// so the active tab is the one where Claude Code just started.
-func wtRuntimeID() string {
+// wtTabInfo uses PowerShell and UI Automation to find the currently selected
+// tab in the foreground Windows Terminal window. Returns both the RuntimeId
+// and the tab name. Only called on SessionStart, so the active tab is the one
+// where Claude Code just started.
+func wtTabInfo() (runtimeID, title string) {
 	script := `
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -174,6 +189,7 @@ foreach ($w in $wtWindows) {
             if ($sel.Current.IsSelected) {
                 $rid = $tab.GetRuntimeId()
                 ($rid -join ',')
+                $tab.Current.Name
                 exit
             }
         } catch {}
@@ -183,20 +199,67 @@ foreach ($w in $wtWindows) {
 
 	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
 	if err != nil {
+		return "", ""
+	}
+	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
+	if len(lines) == 0 {
+		return "", ""
+	}
+	runtimeID = strings.TrimSpace(lines[0])
+	if len(lines) > 1 {
+		title = strings.TrimSpace(lines[1])
+		title = stripTitlePrefix(title)
+	}
+	return runtimeID, title
+}
+
+// wtTabTitle looks up the current tab name for a Windows Terminal tab identified
+// by its RuntimeId. Used on non-SessionStart events to get the updated tab title.
+func wtTabTitle(runtimeID string) string {
+	script := fmt.Sprintf(`
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$wtCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
+$wtWindows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $wtCond)
+$targetRid = @(%s)
+foreach ($w in $wtWindows) {
+    $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+    $tabs = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
+    foreach ($tab in $tabs) {
+        $rid = $tab.GetRuntimeId()
+        if (($rid -join ',') -eq ($targetRid -join ',')) {
+            $tab.Current.Name
+            exit
+        }
+    }
+}
+`, runtimeID)
+
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
+	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(out))
+	title := strings.TrimSpace(string(out))
+	title = stripTitlePrefix(title)
+	return title
 }
 
 // defaultTermInfo returns terminal info based on the current environment.
 // Captures both tmux and WT info when both are available (tmux inside WT).
-func defaultTermInfo(hookEvent, sessionID string) termInfo {
+// WT is checked first, then tmux — when both are present, tmux title is
+// preferred since it's more specific (inner pane vs outer tab).
+func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
 	var ti termInfo
+	if os.Getenv("WT_SESSION") != "" {
+		if hookEvent == "SessionStart" {
+			ti.runtimeID, ti.summary = wtTabInfo()
+		} else if existingRuntimeID != "" {
+			ti.summary = wtTabTitle(existingRuntimeID)
+		}
+	}
 	if os.Getenv("TMUX_PANE") != "" {
 		ti.tmuxPane, ti.summary = tmuxInfo()
-	}
-	if os.Getenv("WT_SESSION") != "" && hookEvent == "SessionStart" {
-		ti.runtimeID = wtRuntimeID()
 	}
 	return ti
 }
@@ -282,7 +345,7 @@ func Run() error {
 	return run(os.Stdin, defaultTermInfo, findParentPID)
 }
 
-func run(stdin io.Reader, termInfoFn func(string, string) termInfo, pidFn func() int) error {
+func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidFn func() int) error {
 	dir := session.Dir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating sessions dir: %w", err)
@@ -337,13 +400,17 @@ func run(stdin io.Reader, termInfoFn func(string, string) termInfo, pidFn func()
 		lastPrompt = existing.LastPrompt
 	}
 
-	// Get terminal info (tmux pane or WT runtime ID)
-	ti := termInfoFn(input.HookEventName, input.SessionID)
+	// Get terminal info (tmux pane, WT runtime ID, and/or tab title)
+	ti := termInfoFn(input.HookEventName, input.SessionID, existing.RuntimeID)
 
-	// Preserve RuntimeID from existing session on non-SessionStart events
+	// Preserve RuntimeID and summary from existing session on non-SessionStart events
 	runtimeID := ti.runtimeID
 	if runtimeID == "" && input.HookEventName != "SessionStart" {
 		runtimeID = existing.RuntimeID
+	}
+	summary := ti.summary
+	if summary == "" && input.HookEventName != "SessionStart" {
+		summary = existing.Summary
 	}
 
 	// Build notification type pointer
@@ -367,7 +434,7 @@ func run(stdin io.Reader, termInfoFn func(string, string) termInfo, pidFn func()
 		NotificationType: notifType,
 		LastActivity:     time.Now().UTC().Format(time.RFC3339),
 		TmuxPane:         ti.tmuxPane,
-		Summary:          ti.summary,
+		Summary:          summary,
 		RuntimeID:        runtimeID,
 		PID:              pid,
 	}
