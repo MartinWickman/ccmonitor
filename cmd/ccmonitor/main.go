@@ -22,6 +22,7 @@ func main() {
 	}
 
 	once := flag.Bool("once", false, "print current state and exit")
+	debug := flag.Bool("debug", false, "show session IDs and PIDs")
 	flag.Parse()
 
 	dir := session.Dir()
@@ -37,11 +38,11 @@ func main() {
 		if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
 			width = w
 		}
-		fmt.Println(monitor.RenderOnce(sessions, width))
+		fmt.Println(monitor.RenderOnce(sessions, width, *debug))
 		return
 	}
 
-	p := tea.NewProgram(monitor.New(dir), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(monitor.New(dir, *debug), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

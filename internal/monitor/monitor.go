@@ -52,6 +52,8 @@ type Model struct {
 	sortByLatest bool
 	// showSummary toggles subtitle display: true=prefer summary, false=prefer prompt.
 	showSummary bool
+	// debug shows session IDs and PIDs in the display.
+	debug bool
 }
 
 // CheckPIDLiveness marks sessions with dead PIDs as "exited".
@@ -72,7 +74,7 @@ func CheckPIDLiveness(sessions []session.Session) {
 }
 
 // New creates a new monitor model that reads from the given directory.
-func New(sessionsDir string) Model {
+func New(sessionsDir string, debug bool) Model {
 	sessions, _ := session.LoadAll(sessionsDir)
 	CheckPIDLiveness(sessions)
 
@@ -86,8 +88,9 @@ func New(sessionsDir string) Model {
 		spinner:     s,
 		lastState:   map[string]string{},
 		flashUntil:  map[string]time.Time{},
-		showSummary: false,
+		showSummary:  false,
 		sortByLatest: false,
+		debug:        debug,
 	}
 }
 
@@ -137,7 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
 		CheckPIDLiveness(m.sessions)
 		// Build click map by scanning the actual rendered view for session IDs.
-		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary)
+		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary, m.debug)
 		m.clickMap = buildClickMap(m.sessions, view)
 		now := time.Now()
 		newFlash := false
@@ -182,5 +185,5 @@ func (m Model) View() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusUntil) {
 		status = m.statusMsg
 	}
-	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.sortByLatest, m.showSummary)
+	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.sortByLatest, m.showSummary, m.debug)
 }

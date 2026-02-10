@@ -22,11 +22,12 @@ type sessionRow struct {
 	prompt          string
 	isLast          bool
 	flashPhase      int // 0=none, 1=brightest ... 10=dimmest
+	debug           bool
 }
 
 // newSessionRow builds a sessionRow from a session, applying truncation, styling,
 // and flash state. isLast indicates whether this is the last session in its group.
-func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool) sessionRow {
+func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool, debug bool) sessionRow {
 	now := time.Now()
 
 	connector := "├─"
@@ -89,6 +90,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 		prompt:          prompt,
 		isLast:          isLast,
 		flashPhase:      phase,
+		debug:           debug,
 	}
 }
 
@@ -106,20 +108,29 @@ func (r sessionRow) render(w columnWidths) string {
 			Render(session.TimeSince(r.rawLastActivity))
 	}
 
-	// Line 1: connector + prompt/summary (shortID:PID) — or just connector + shortID:PID
-	idPart := r.shortID
-	if r.pid > 0 {
-		idPart += ":" + fmt.Sprintf("%d", r.pid)
-	}
-	faintID := lipgloss.NewStyle().Faint(true).Render(idPart)
-
+	// Line 1: connector + prompt/summary, with optional (shortID:PID) in debug mode
 	var line1 string
-	if r.prompt != "" {
-		line1 = padRight(r.connector, w.conn) + " " +
-			promptStyle.Render(r.prompt) + " " +
-			lipgloss.NewStyle().Faint(true).Render("("+idPart+")")
+	if r.debug {
+		idPart := r.shortID
+		if r.pid > 0 {
+			idPart += ":" + fmt.Sprintf("%d", r.pid)
+		}
+		if r.prompt != "" {
+			line1 = padRight(r.connector, w.conn) + " " +
+				promptStyle.Render(r.prompt) + " " +
+				lipgloss.NewStyle().Faint(true).Render("("+idPart+")")
+		} else {
+			line1 = padRight(r.connector, w.conn) + " " +
+				lipgloss.NewStyle().Faint(true).Render(idPart)
+		}
 	} else {
-		line1 = padRight(r.connector, w.conn) + " " + faintID
+		if r.prompt != "" {
+			line1 = padRight(r.connector, w.conn) + " " +
+				promptStyle.Render(r.prompt)
+		} else {
+			line1 = padRight(r.connector, w.conn) + " " +
+				lipgloss.NewStyle().Faint(true).Render("(no description)")
+		}
 	}
 
 	// Line 2: indent + status + detail + elapsed

@@ -17,17 +17,17 @@ type columnWidths struct {
 }
 
 // RenderOnce produces a single snapshot of the current sessions for non-interactive output.
-func RenderOnce(sessions []session.Session, width int) string {
+func RenderOnce(sessions []session.Session, width int, debug bool) string {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	return renderView(sessions, sp, width, nil, "", false, false, true)
+	return renderView(sessions, sp, width, nil, "", false, false, true, debug)
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, sortByLatest bool, showSummary bool) string {
-	return renderView(sessions, sp, width, flashUntil, statusMsg, true, sortByLatest, showSummary)
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, sortByLatest bool, showSummary bool, debug bool) string {
+	return renderView(sessions, sp, width, flashUntil, statusMsg, true, sortByLatest, showSummary, debug)
 }
 
-func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, sortByLatest bool, showSummary bool) string {
+func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, sortByLatest bool, showSummary bool, debug bool) string {
 	if width == 0 {
 		width = 80
 	}
@@ -61,7 +61,7 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 	groupRows := make([][]sessionRow, len(groups))
 	var allRows []sessionRow
 	for i, g := range groups {
-		rows := buildRows(g.Sessions, sp, flashUntil, showSummary)
+		rows := buildRows(g.Sessions, sp, flashUntil, showSummary, debug)
 		groupRows[i] = rows
 		allRows = append(allRows, rows...)
 	}
@@ -111,11 +111,11 @@ func renderSummary(sessions []session.Session) string {
 }
 
 // buildRows converts sessions into styled row data.
-func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool) []sessionRow {
+func buildRows(sessions []session.Session, sp spinner.Model, flashUntil map[string]time.Time, showSummary bool, debug bool) []sessionRow {
 	var rows []sessionRow
 	for i, s := range sessions {
 		isLast := i == len(sessions)-1
-		rows = append(rows, newSessionRow(s, isLast, sp, flashUntil, showSummary))
+		rows = append(rows, newSessionRow(s, isLast, sp, flashUntil, showSummary, debug))
 	}
 	return rows
 }
