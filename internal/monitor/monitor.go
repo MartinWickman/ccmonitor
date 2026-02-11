@@ -53,6 +53,8 @@ type Model struct {
 	showSummary bool
 	// debug shows session IDs and PIDs in the display.
 	debug bool
+	// hoverSID is the session ID currently under the mouse cursor.
+	hoverSID string
 }
 
 // CheckPIDLiveness marks sessions with dead PIDs as "exited".
@@ -110,6 +112,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		return m, nil
 	case tea.MouseMsg:
+		// Update hover state on any mouse event
+		m.hoverSID = m.clickMap[msg.Y]
+
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
 			if sid, ok := m.clickMap[msg.Y]; ok {
 				// Find the session to switch to
@@ -132,7 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
 		CheckPIDLiveness(m.sessions)
 		// Build click map by scanning the actual rendered view for session IDs.
-		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.showSummary, m.debug)
+		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.showSummary, m.debug, "")
 		m.clickMap = buildClickMap(m.sessions, view)
 		now := time.Now()
 		newFlash := false
@@ -177,5 +182,5 @@ func (m Model) View() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusUntil) {
 		status = m.statusMsg
 	}
-	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.showSummary, m.debug)
+	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.showSummary, m.debug, m.hoverSID)
 }

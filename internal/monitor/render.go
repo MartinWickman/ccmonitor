@@ -21,14 +21,14 @@ type columnWidths struct {
 func RenderOnce(sessions []session.Session, width int, debug bool) string {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	return renderView(sessions, sp, width, nil, "", false, true, debug)
+	return renderView(sessions, sp, width, nil, "", false, true, debug, "")
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, showSummary bool, debug bool) string {
-	return renderView(sessions, sp, width, flashUntil, statusMsg, true, showSummary, debug)
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, showSummary bool, debug bool, hoverSID string) string {
+	return renderView(sessions, sp, width, flashUntil, statusMsg, true, showSummary, debug, hoverSID)
 }
 
-func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, showSummary bool, debug bool) string {
+func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, showSummary bool, debug bool, hoverSID string) string {
 	if width == 0 {
 		width = 80
 	}
@@ -72,7 +72,7 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 	boxStyle := projectBoxStyle.Width(boxWidth)
 
 	for i, g := range groups {
-		box := renderProjectGroup(g, groupRows[i], w)
+		box := renderProjectGroup(g, groupRows[i], w, hoverSID)
 		b.WriteString(boxStyle.Render(box) + "\n")
 	}
 
@@ -148,7 +148,7 @@ func computeWidths(allRows []sessionRow) columnWidths {
 	return w
 }
 
-func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths) string {
+func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths, hoverSID string) string {
 	var b strings.Builder
 
 	dirName := filepath.Base(g.Project)
@@ -157,7 +157,7 @@ func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidth
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
 
 	for _, r := range rows {
-		b.WriteString(r.render(w))
+		b.WriteString(r.render(w, r.sessionID == hoverSID))
 	}
 
 	return b.String()

@@ -47,7 +47,7 @@ func TestSessionRowRender(t *testing.T) {
 		}
 		row := newSessionRow(s, true, sp, nil, true, true)
 		w := columnWidths{conn: 4, status: 12, contentWidth: 80}
-		output := row.render(w)
+		output := row.render(w, false)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
 		if len(lines) != 2 {
@@ -82,7 +82,7 @@ func TestSessionRowRender(t *testing.T) {
 		}
 		row := newSessionRow(s, false, sp, nil, true, true)
 		w := columnWidths{conn: 4, status: 12, contentWidth: 80}
-		output := row.render(w)
+		output := row.render(w, false)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
 		if len(lines) != 2 {

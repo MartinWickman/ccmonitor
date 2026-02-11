@@ -12,6 +12,7 @@ import (
 
 // sessionRow holds the data for one session table row plus its prompt.
 type sessionRow struct {
+	sessionID       string
 	connector       string
 	shortID         string
 	pid             int
@@ -80,7 +81,8 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 	phase := flashPhase(now, flashUntil[s.SessionID])
 
 	return sessionRow{
-		connector:       lipgloss.NewStyle().Faint(true).Render(connector),
+		sessionID:       s.SessionID,
+		connector:       connector,
 		shortID:         lipgloss.NewStyle().Faint(true).Render(shortID),
 		pid:             s.PID,
 		status:          style.Render(indicator + " " + label),
@@ -96,7 +98,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 
 // render produces the full output for this row: line 1 is the prompt/summary
 // with session ID, line 2 is the status/detail/elapsed.
-func (r sessionRow) render(w columnWidths) string {
+func (r sessionRow) render(w columnWidths, hovered bool) string {
 	elapsed := r.elapsed
 	if r.flashPhase == 1 {
 		elapsed = lipgloss.NewStyle().
@@ -108,7 +110,22 @@ func (r sessionRow) render(w columnWidths) string {
 			Render(session.TimeSince(r.rawLastActivity))
 	}
 
+	// Style connector: bold when hovered, faint otherwise
+	var styledConn string
+	if hovered {
+		styledConn = lipgloss.NewStyle().Bold(true).Render(r.connector)
+	} else {
+		styledConn = lipgloss.NewStyle().Faint(true).Render(r.connector)
+	}
+
 	// Line 1: connector + prompt/summary, with optional (shortID:PID) in debug mode
+	textStyle := promptStyle
+	faintStyle := lipgloss.NewStyle().Faint(true)
+	if hovered {
+		textStyle = lipgloss.NewStyle().Bold(true)
+		faintStyle = lipgloss.NewStyle().Bold(true)
+	}
+
 	var line1 string
 	if r.debug {
 		idPart := r.shortID
@@ -116,20 +133,20 @@ func (r sessionRow) render(w columnWidths) string {
 			idPart += ":" + fmt.Sprintf("%d", r.pid)
 		}
 		if r.prompt != "" {
-			line1 = padRight(r.connector, w.conn) + " " +
-				promptStyle.Render(r.prompt) + " " +
-				lipgloss.NewStyle().Faint(true).Render("("+idPart+")")
+			line1 = padRight(styledConn, w.conn) + " " +
+				textStyle.Render(r.prompt) + " " +
+				faintStyle.Render("("+idPart+")")
 		} else {
-			line1 = padRight(r.connector, w.conn) + " " +
-				lipgloss.NewStyle().Faint(true).Render(idPart)
+			line1 = padRight(styledConn, w.conn) + " " +
+				faintStyle.Render(idPart)
 		}
 	} else {
 		if r.prompt != "" {
-			line1 = padRight(r.connector, w.conn) + " " +
-				promptStyle.Render(r.prompt)
+			line1 = padRight(styledConn, w.conn) + " " +
+				textStyle.Render(r.prompt)
 		} else {
-			line1 = padRight(r.connector, w.conn) + " " +
-				lipgloss.NewStyle().Faint(true).Render("(no description)")
+			line1 = padRight(styledConn, w.conn) + " " +
+				faintStyle.Render("...")
 		}
 	}
 

@@ -42,7 +42,7 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(monitor.New(dir, *debug), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(monitor.New(dir, *debug), tea.WithAltScreen(), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
