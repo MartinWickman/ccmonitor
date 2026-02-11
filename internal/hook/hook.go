@@ -14,6 +14,7 @@ import (
 	ps "github.com/mitchellh/go-ps"
 
 	"github.com/martinwickman/ccmonitor/internal/session"
+	"github.com/martinwickman/ccmonitor/internal/wt"
 )
 
 // Hook event name constants.
@@ -177,92 +178,6 @@ func tmuxInfo() (pane, title string) {
 	return pane, title
 }
 
-// wtTabInfo uses PowerShell and UI Automation to find the currently selected
-// tab in the foreground Windows Terminal window. Returns both the RuntimeId
-// and the tab name. Only called on SessionStart, so the active tab is the one
-// where Claude Code just started.
-func wtTabInfo() (runtimeID, title string) {
-	script := `
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class WinAPI {
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-}
-"@
-$fgHwnd = [WinAPI]::GetForegroundWindow()
-$root = [System.Windows.Automation.AutomationElement]::RootElement
-$wtCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
-$wtWindows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $wtCond)
-foreach ($w in $wtWindows) {
-    if ($w.Current.NativeWindowHandle -ne [int]$fgHwnd) { continue }
-    $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
-    $tabs = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
-    foreach ($tab in $tabs) {
-        try {
-            $sel = $tab.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-            if ($sel.Current.IsSelected) {
-                $rid = $tab.GetRuntimeId()
-                ($rid -join ',')
-                $tab.Current.Name
-                exit
-            }
-        } catch {}
-    }
-}
-`
-
-	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
-	if err != nil {
-		return "", ""
-	}
-	lines := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)
-	if len(lines) == 0 {
-		return "", ""
-	}
-	runtimeID = strings.TrimSpace(lines[0])
-	if len(lines) > 1 {
-		title = strings.TrimSpace(lines[1])
-		title = stripTitlePrefix(title)
-	}
-	return runtimeID, title
-}
-
-// wtTabTitle looks up the current tab name for a Windows Terminal tab identified
-// by its RuntimeId. Used on non-SessionStart events to get the updated tab title.
-func wtTabTitle(runtimeID string) string {
-	script := fmt.Sprintf(`
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-$root = [System.Windows.Automation.AutomationElement]::RootElement
-$wtCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'CASCADIA_HOSTING_WINDOW_CLASS')
-$wtWindows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $wtCond)
-$targetRid = @(%s)
-foreach ($w in $wtWindows) {
-    $tabCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
-    $tabs = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)
-    foreach ($tab in $tabs) {
-        $rid = $tab.GetRuntimeId()
-        if (($rid -join ',') -eq ($targetRid -join ',')) {
-            $tab.Current.Name
-            exit
-        }
-    }
-}
-`, runtimeID)
-
-	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
-	if err != nil {
-		return ""
-	}
-	title := strings.TrimSpace(string(out))
-	title = stripTitlePrefix(title)
-	return title
-}
-
 // defaultTermInfo returns terminal info based on the current environment.
 // Captures both tmux and WT info when both are available (tmux inside WT).
 // WT is checked first, then tmux — when both are present, tmux title is
@@ -271,10 +186,11 @@ func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
 	var ti termInfo
 	if os.Getenv("WT_SESSION") != "" {
 		if hookEvent == EventSessionStart || existingRuntimeID == "" {
-			ti.runtimeID, ti.summary = wtTabInfo()
+			ti.runtimeID, ti.summary = wt.TabInfo()
 		} else {
-			ti.summary = wtTabTitle(existingRuntimeID)
+			ti.summary = wt.TabTitle(existingRuntimeID)
 		}
+		ti.summary = stripTitlePrefix(ti.summary)
 	}
 	if os.Getenv("TMUX_PANE") != "" {
 		ti.tmuxPane, ti.summary = tmuxInfo()
