@@ -97,7 +97,7 @@ func renderHelp(showSummary bool) string {
 		toggle = faint("p ") + bold("prompt") + faint("/title")
 	}
 
-	line := faint("q quit · ") + toggle + faint(" · click to switch pane")
+	line := faint("q quit · ") + toggle + faint(" · click to switch tab")
 	return helpStyle.Render(line)
 }
 

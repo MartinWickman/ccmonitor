@@ -1,35 +1,16 @@
-# ccmonitor
+# Claude Code Monitor
 
-**A single dashboard for all your Claude Code instances.**
+**A terminal dashboard for Claude Code instances.**
 
-Running multiple Claude Code sessions across different projects and terminal tabs? ccmonitor shows you what every instance is doing — no tab-switching required.
+`ccmonitor` shows you what every CC instance is doing *right now* or if any of them are waiting for your response.
+So hopefully less hunting for correct terminal tab...
 
 - See all sessions at a glance, grouped by project
-- Know which instances are working, waiting for input, or idle
-- See what each one is doing: which tool, what file, what command
-- Spot stuck or forgotten sessions with elapsed time indicators
-- Automatically detect crashed instances via PID-based liveness checks
+- Which Claude sessions are working, waiting for input, or just idling
+- It also shows your latest prompt (or summary) for each session
 - Click to jump to the right tmux pane or Windows Terminal tab
 
-```
-ccmonitor  2 projects, 4 sessions
-
-╭──────────────────────────────────────────────────────────────╮
-│ myproject/ /home/user/myproject                              │
-│ ├─ Refactor the auth module to use JWT tokens                │
-│ │  ● Working  Edit src/main.py                        2m ago │
-│ └─ Delete all temp files and rebuild the project             │
-│    ◆ Waiting  permission                              4m ago │
-╰──────────────────────────────────────────────────────────────╯
-
-╭──────────────────────────────────────────────────────────────╮
-│ webapp/ /home/user/webapp                                    │
-│ ├─ Run the test suite and fix any failures                   │
-│ │  ● Working  Bash: npm test                          2m ago │
-│ └─ Add dark mode support to the settings page                │
-│    ○ Idle     Finished responding                     7m ago │
-╰──────────────────────────────────────────────────────────────╯
-```
+![](recording.gif)
 
 ## Install
 
@@ -46,15 +27,21 @@ Then register the hooks as a Claude Code plugin:
 /plugin install ccmonitor
 ```
 
-This registers hooks for all 7 Claude Code lifecycle events. No manual `settings.json` editing needed.
+This registers hooks for all 7 Claude Code lifecycle events.
+
+Note: `ccmonitor` should be placed in your PATH or the hooks wont work.
 
 ## Usage
 
-Launch the live monitor:
+Start the monitor in a terminal
 
 ```sh
 ccmonitor
 ```
+
+- Press `q` or `Ctrl+C` to quit
+- Click a session to switch to its tmux pane or Windows Terminal tab.
+- 'p' to toggle between prompt or summary display
 
 Print a one-time snapshot and exit:
 
@@ -62,46 +49,17 @@ Print a one-time snapshot and exit:
 ccmonitor --once
 ```
 
-Show session IDs and PIDs for debugging:
-
-```sh
-ccmonitor --debug
-```
-
-- Press `q` or `Ctrl+C` to quit the live monitor.
-- Click a session to switch to its tmux pane or Windows Terminal tab.
-
 ## How it works
 
-ccmonitor has two components that communicate through JSON files on disk:
+It installs a few hooks into Claude Code. These hooks reports to the ccmonitor instances by keeping state in your home directory (`~/.ccmonitor/`).
 
-1. **Hook handler** (`ccmonitor hook`) — Claude Code fires hooks on lifecycle events (session start, tool use, prompts, stop, etc.). The hook handler reads the event JSON from stdin and writes a status file per session to `~/.ccmonitor/sessions/`.
+### Quirks
 
-2. **Monitor** (`ccmonitor`) — Reads the session files and renders a live-updating terminal display using [Bubble Tea](https://github.com/charmbracelet/bubbletea). Refreshes every second. The monitor is read-only — it never writes or deletes session files.
+The summary display may lag or be wonky from time to time, again because of how Claude Code hooks work and the limited info we get from Claude.
 
-### Status tracking
-
-| Hook Event         | Status      | What it means                        |
-|--------------------|-------------|--------------------------------------|
-| `SessionStart`     | `starting`  | Session just began                   |
-| `UserPromptSubmit` | `working`   | User sent a prompt                   |
-| `PreToolUse`       | `working`   | Model is calling a tool              |
-| `PostToolUse`      | `working`   | Tool call completed                  |
-| `Notification`     | `waiting`   | Needs user attention (permission)    |
-| `Stop`             | `idle`      | Finished responding                  |
-| `SessionEnd`       | `ended`     | Session terminated                   |
-
-Sessions whose PID has died without a clean `SessionEnd` are shown as `exited`.
-
-### Stale session cleanup
-
-The hook handler keeps the sessions directory clean automatically:
-
-- `SessionEnd` deletes its own session file
-- `SessionStart` and `SessionEnd` scan for files with dead PIDs and remove them
-- Every hook event removes other files sharing the same PID (since a Claude Code process only has one active session at a time)
-
-No daemon, no cron, no manual cleanup needed.
+ccmonitor tries to clean up the stale/dead sessions automatically, but the way
+Claude Code hooks works can make this a bit shaky, so if you end up with duplicate sessions in the list,
+run `ccmonitor --clean` to remove all stale sessions.
 
 ## Platform support
 
@@ -120,3 +78,9 @@ Remove the hooks:
 ```
 /plugin uninstall ccmonitor
 ```
+
+## Future work
+
+* Should support more terminals (e.g. Iterm2 etc)
+* Running the display in a browser
+* Possibly respond to Claude Code via the monitor. 
