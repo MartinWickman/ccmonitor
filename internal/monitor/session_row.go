@@ -21,6 +21,7 @@ type sessionRow struct {
 	elapsed         string
 	rawLastActivity string
 	prompt          string
+	isQuoted        bool // true if prompt should be wrapped in quotes
 	isLast          bool
 	flashPhase      int // 0=none, 1=brightest ... 10=dimmest
 	debug           bool
@@ -71,12 +72,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 			isPrompt = false
 		}
 	}
-	if len(prompt) > 70 {
-		prompt = prompt[:67] + "..."
-	}
-	if isPrompt && prompt != "" {
-		prompt = "\"" + prompt + "\""
-	}
+	isQuoted := isPrompt && prompt != ""
 
 	phase := flashPhase(now, flashUntil[s.SessionID])
 
@@ -90,6 +86,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 		elapsed:         lipgloss.NewStyle().Faint(true).Render(elapsed),
 		rawLastActivity: s.LastActivity,
 		prompt:          prompt,
+		isQuoted:        isQuoted,
 		isLast:          isLast,
 		flashPhase:      phase,
 		debug:           debug,
@@ -126,24 +123,54 @@ func (r sessionRow) render(w columnWidths, hovered bool) string {
 		faintStyle = lipgloss.NewStyle().Bold(true)
 	}
 
+	// Compute available width for prompt text, then truncate to fit
+	prompt := r.prompt
+	if w.contentWidth > 0 && prompt != "" {
+		available := w.contentWidth - w.conn - 1 - 8 // connector + space + right margin
+		if r.isQuoted {
+			available -= 2 // surrounding quotes
+		}
+		if r.debug {
+			// Account for " (shortID)" or " (shortID:PID)"
+			suffixLen := 2 + lipgloss.Width(r.shortID) + 1 // space + ( + shortID + )
+			if r.pid > 0 {
+				suffixLen += 1 + len(fmt.Sprintf("%d", r.pid)) // : + PID digits
+			}
+			available -= suffixLen
+		}
+		if available < 0 {
+			available = 0
+		}
+		if len(prompt) > available {
+			if available > 3 {
+				prompt = prompt[:available-3] + "..."
+			} else {
+				prompt = prompt[:available]
+			}
+		}
+	}
+	if r.isQuoted && prompt != "" {
+		prompt = "\"" + prompt + "\""
+	}
+
 	var line1 string
 	if r.debug {
 		idPart := r.shortID
 		if r.pid > 0 {
 			idPart += ":" + fmt.Sprintf("%d", r.pid)
 		}
-		if r.prompt != "" {
+		if prompt != "" {
 			line1 = padRight(styledConn, w.conn) + " " +
-				textStyle.Render(r.prompt) + " " +
+				textStyle.Render(prompt) + " " +
 				faintStyle.Render("("+idPart+")")
 		} else {
 			line1 = padRight(styledConn, w.conn) + " " +
 				faintStyle.Render(idPart)
 		}
 	} else {
-		if r.prompt != "" {
+		if prompt != "" {
 			line1 = padRight(styledConn, w.conn) + " " +
-				textStyle.Render(r.prompt)
+				textStyle.Render(prompt)
 		} else {
 			line1 = padRight(styledConn, w.conn) + " " +
 				faintStyle.Render("...")
