@@ -169,7 +169,7 @@ func TestNotificationDetail(t *testing.T) {
 	}
 }
 
-func TestReadExistingSession(t *testing.T) {
+func TestLoadExistingSession(t *testing.T) {
 	t.Run("existing file with last_prompt and runtime_id", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "test.json")
@@ -181,7 +181,7 @@ func TestReadExistingSession(t *testing.T) {
 		data, _ := json.Marshal(s)
 		os.WriteFile(path, data, 0644)
 
-		got := readExistingSession(path)
+		got := loadExistingSession(path)
 		if got.LastPrompt != "do the thing" {
 			t.Errorf("last_prompt = %q, want %q", got.LastPrompt, "do the thing")
 		}
@@ -191,7 +191,7 @@ func TestReadExistingSession(t *testing.T) {
 	})
 
 	t.Run("missing file returns zero session", func(t *testing.T) {
-		got := readExistingSession("/nonexistent/file.json")
+		got := loadExistingSession("/nonexistent/file.json")
 		if got.LastPrompt != "" {
 			t.Errorf("last_prompt = %q, want empty", got.LastPrompt)
 		}
@@ -205,7 +205,7 @@ func TestReadExistingSession(t *testing.T) {
 		path := filepath.Join(dir, "bad.json")
 		os.WriteFile(path, []byte("{bad"), 0644)
 
-		got := readExistingSession(path)
+		got := loadExistingSession(path)
 		if got.LastPrompt != "" {
 			t.Errorf("last_prompt = %q, want empty", got.LastPrompt)
 		}

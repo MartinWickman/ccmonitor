@@ -108,19 +108,19 @@ func renderSummary(sessions []session.Session) string {
 	}
 
 	var parts []string
-	if n := counts["working"]; n > 0 {
+	if n := counts[session.StatusWorking]; n > 0 {
 		parts = append(parts, workingStyle.Render(fmt.Sprintf("● %d working", n)))
 	}
-	if n := counts["waiting"]; n > 0 {
+	if n := counts[session.StatusWaiting]; n > 0 {
 		parts = append(parts, waitingStyle.Render(fmt.Sprintf("◆ %d waiting", n)))
 	}
-	if n := counts["idle"]; n > 0 {
+	if n := counts[session.StatusIdle]; n > 0 {
 		parts = append(parts, idleStyle.Render(fmt.Sprintf("○ %d idle", n)))
 	}
-	if n := counts["starting"]; n > 0 {
+	if n := counts[session.StatusStarting]; n > 0 {
 		parts = append(parts, startingStyle.Render(fmt.Sprintf("◌ %d starting", n)))
 	}
-	if n := counts["exited"]; n > 0 {
+	if n := counts[session.StatusExited]; n > 0 {
 		parts = append(parts, exitedStyle.Render(fmt.Sprintf("✕ %d exited", n)))
 	}
 

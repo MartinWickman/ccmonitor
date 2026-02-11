@@ -220,17 +220,17 @@ func (r sessionRow) widths() columnWidths {
 // statusDisplay returns the indicator character, style, and label for a status.
 func statusDisplay(status string, sp spinner.Model) (indicator string, style lipgloss.Style, label string) {
 	switch status {
-	case "working":
+	case session.StatusWorking:
 		return sp.View(), workingStyle, "Working"
-	case "waiting":
+	case session.StatusWaiting:
 		return "◆", waitingStyle, "Waiting"
-	case "idle":
+	case session.StatusIdle:
 		return "○", idleStyle, "Idle"
-	case "starting":
+	case session.StatusStarting:
 		return "◌", startingStyle, "Started"
-	case "exited":
+	case session.StatusExited:
 		return "✕", exitedStyle, "Exited"
-	case "ended":
+	case session.StatusEnded:
 		return "─", idleStyle, "Ended"
 	default:
 		return "?", idleStyle, status

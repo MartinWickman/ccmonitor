@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+// Status constants for session state.
+const (
+	StatusStarting = "starting"
+	StatusWorking  = "working"
+	StatusIdle     = "idle"
+	StatusWaiting  = "waiting"
+	StatusEnded    = "ended"
+	StatusExited   = "exited"
+)
+
 // Session represents the state of a single Claude Code instance.
 type Session struct {
 	SessionID        string  `json:"session_id"`
@@ -39,33 +49,40 @@ func Dir() string {
 	return filepath.Join(home, ".ccmonitor", "sessions")
 }
 
-// LoadAll reads all session JSON files from dir and returns the parsed sessions.
-// Corrupt or unreadable files are skipped silently. PID liveness checking is the
-// caller's responsibility (see monitor package).
-func LoadAll(dir string) ([]Session, error) {
+// ForEachSessionFile iterates over all valid session files in dir, calling fn
+// with the file path and parsed session for each. Corrupt files are skipped.
+// Returns nil (not an error) if the directory does not exist.
+func ForEachSessionFile(dir string, fn func(path string, s *Session)) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
-
-	var sessions []Session
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-
-		s, err := loadFile(filepath.Join(dir, e.Name()))
+		path := filepath.Join(dir, e.Name())
+		s, err := LoadFile(path)
 		if err != nil {
 			continue // skip corrupt files
 		}
-
-		sessions = append(sessions, *s)
+		fn(path, s)
 	}
+	return nil
+}
 
-	return sessions, nil
+// LoadAll reads all session JSON files from dir and returns the parsed sessions.
+// Corrupt or unreadable files are skipped silently. PID liveness checking is the
+// caller's responsibility (see monitor package).
+func LoadAll(dir string) ([]Session, error) {
+	var sessions []Session
+	err := ForEachSessionFile(dir, func(_ string, s *Session) {
+		sessions = append(sessions, *s)
+	})
+	return sessions, err
 }
 
 // GroupByProject groups sessions by their project directory, sorted by project name.
@@ -135,12 +152,8 @@ func CleanAll(dir string) (int, error) {
 	return removed, nil
 }
 
-// LoadFile reads and parses a single session file. Exported for use by the hook package.
+// LoadFile reads and parses a single session file.
 func LoadFile(path string) (*Session, error) {
-	return loadFile(path)
-}
-
-func loadFile(path string) (*Session, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

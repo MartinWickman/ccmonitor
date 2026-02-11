@@ -16,6 +16,23 @@ import (
 	"github.com/martinwickman/ccmonitor/internal/session"
 )
 
+// Hook event name constants.
+const (
+	EventSessionStart     = "SessionStart"
+	EventSessionEnd       = "SessionEnd"
+	EventUserPromptSubmit = "UserPromptSubmit"
+	EventPreToolUse       = "PreToolUse"
+	EventPostToolUse      = "PostToolUse"
+	EventNotification     = "Notification"
+	EventStop             = "Stop"
+)
+
+// Actionable notification types.
+const (
+	NotifPermissionPrompt  = "permission_prompt"
+	NotifElicitationDialog = "elicitation_dialog"
+)
+
 type hookInput struct {
 	SessionID        string          `json:"session_id"`
 	CWD              string          `json:"cwd"`
@@ -31,18 +48,18 @@ type hookInput struct {
 
 func mapEvent(event, toolDetail, notifType, title, message string) (status, detail string) {
 	switch event {
-	case "SessionStart":
-		return "starting", "Session started"
-	case "UserPromptSubmit":
-		return "working", "Processing prompt..."
-	case "PreToolUse":
-		return "working", toolDetail
-	case "PostToolUse":
-		return "working", toolDetail
-	case "Notification":
-		return "waiting", notificationDetail(notifType, title, message)
-	case "Stop":
-		return "idle", "Finished responding"
+	case EventSessionStart:
+		return session.StatusStarting, "Session started"
+	case EventUserPromptSubmit:
+		return session.StatusWorking, "Processing prompt..."
+	case EventPreToolUse:
+		return session.StatusWorking, toolDetail
+	case EventPostToolUse:
+		return session.StatusWorking, toolDetail
+	case EventNotification:
+		return session.StatusWaiting, notificationDetail(notifType, title, message)
+	case EventStop:
+		return session.StatusIdle, "Finished responding"
 	default:
 		return "", ""
 	}
@@ -53,7 +70,7 @@ func buildToolDetail(event, toolName string, toolInput json.RawMessage) string {
 		return ""
 	}
 
-	if event == "PostToolUse" {
+	if event == EventPostToolUse {
 		return fmt.Sprintf("Finished %s, continuing...", toolName)
 	}
 
@@ -253,7 +270,7 @@ foreach ($w in $wtWindows) {
 func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
 	var ti termInfo
 	if os.Getenv("WT_SESSION") != "" {
-		if hookEvent == "SessionStart" || existingRuntimeID == "" {
+		if hookEvent == EventSessionStart || existingRuntimeID == "" {
 			ti.runtimeID, ti.summary = wtTabInfo()
 		} else {
 			ti.summary = wtTabTitle(existingRuntimeID)
@@ -265,18 +282,14 @@ func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
 	return ti
 }
 
-// readExistingSession reads the existing session file and returns it.
+// loadExistingSession reads the existing session file and returns it.
 // Returns a zero-value Session if the file doesn't exist or is corrupt.
-func readExistingSession(path string) session.Session {
-	data, err := os.ReadFile(path)
+func loadExistingSession(path string) session.Session {
+	s, err := session.LoadFile(path)
 	if err != nil {
 		return session.Session{}
 	}
-	var s session.Session
-	if err := json.Unmarshal(data, &s); err != nil {
-		return session.Session{}
-	}
-	return s
+	return *s
 }
 
 func writeSessionFile(path string, s session.Session) error {
@@ -313,61 +326,28 @@ func cleanupSamePID(dir, currentSessionID string, currentPID int) {
 	if currentPID <= 0 {
 		return
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
+	session.ForEachSessionFile(dir, func(path string, s *session.Session) {
+		if s.SessionID != currentSessionID && s.PID == currentPID {
+			os.Remove(path) // best-effort
 		}
-		path := filepath.Join(dir, e.Name())
-		s, err := session.LoadFile(path)
-		if err != nil {
-			continue
-		}
-		if s.SessionID == currentSessionID {
-			continue // don't remove our own file
-		}
-		if s.PID == currentPID {
-			os.Remove(path)
-		}
-	}
+	})
 }
 
 // cleanupDead removes session files whose PID is no longer alive.
 // Files with PID 0 (legacy or unknown) and corrupt files are skipped.
 func cleanupDead(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading sessions dir: %w", err)
-	}
-
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		s, err := session.LoadFile(path)
-		if err != nil {
-			continue // skip corrupt files
-		}
+	return session.ForEachSessionFile(dir, func(path string, s *session.Session) {
 		if s.PID <= 0 {
-			continue // no PID recorded, can't check
+			return // no PID recorded, can't check
 		}
 		proc, err := ps.FindProcess(s.PID)
 		if err != nil {
-			continue // can't check, leave it
+			return // can't check, leave it
 		}
 		if proc == nil {
-			// Process is dead, remove the session file
-			os.Remove(path)
+			os.Remove(path) // best-effort
 		}
-	}
-	return nil
+	})
 }
 
 // Run is the entry point called from main.go. It reads hook input from stdin.
@@ -394,22 +374,22 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 	sessionFile := filepath.Join(dir, input.SessionID+".json")
 
 	// SessionEnd: cleanup dead sessions, delete own file, return
-	if input.HookEventName == "SessionEnd" {
+	if input.HookEventName == EventSessionEnd {
 		cleanupDead(dir)
 		os.Remove(sessionFile)
 		return nil
 	}
 
 	// SessionStart: cleanup dead sessions
-	if input.HookEventName == "SessionStart" {
+	if input.HookEventName == EventSessionStart {
 		cleanupDead(dir)
 	}
 
 	// Skip non-actionable notifications (e.g. idle_prompt after ~60s inactivity).
 	// The session file already has status "idle" from the prior Stop event.
-	if input.HookEventName == "Notification" &&
-		input.NotificationType != "permission_prompt" &&
-		input.NotificationType != "elicitation_dialog" {
+	if input.HookEventName == EventNotification &&
+		input.NotificationType != NotifPermissionPrompt &&
+		input.NotificationType != NotifElicitationDialog {
 		return nil
 	}
 
@@ -420,11 +400,11 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 	}
 
 	// Read existing session for preserved fields (last_prompt, runtime_id)
-	existing := readExistingSession(sessionFile)
+	existing := loadExistingSession(sessionFile)
 
 	// Resolve last_prompt
 	var lastPrompt string
-	if input.HookEventName == "UserPromptSubmit" {
+	if input.HookEventName == EventUserPromptSubmit {
 		lastPrompt = input.Prompt
 	} else {
 		lastPrompt = existing.LastPrompt
@@ -435,11 +415,11 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 
 	// Preserve RuntimeID and summary from existing session on non-SessionStart events
 	runtimeID := ti.runtimeID
-	if runtimeID == "" && input.HookEventName != "SessionStart" {
+	if runtimeID == "" && input.HookEventName != EventSessionStart {
 		runtimeID = existing.RuntimeID
 	}
 	summary := ti.summary
-	if summary == "" && input.HookEventName != "SessionStart" {
+	if summary == "" && input.HookEventName != EventSessionStart {
 		summary = existing.Summary
 	}
 
@@ -451,7 +431,7 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 
 	// Capture PID: use pidFn on SessionStart, preserve from existing otherwise
 	pid := pidFn()
-	if pid == 0 && input.HookEventName != "SessionStart" {
+	if pid == 0 && input.HookEventName != EventSessionStart {
 		pid = existing.PID
 	}
 

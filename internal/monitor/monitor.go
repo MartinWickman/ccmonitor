@@ -68,7 +68,7 @@ func CheckPIDLiveness(sessions []session.Session) {
 			continue
 		}
 		if proc == nil {
-			sessions[i].Status = "exited"
+			sessions[i].Status = session.StatusExited
 			sessions[i].Detail = "Process ended"
 		}
 	}
