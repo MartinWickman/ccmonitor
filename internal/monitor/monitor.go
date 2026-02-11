@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -120,14 +121,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Find the session to switch to
 				for _, s := range m.sessions {
 					if s.SessionID == sid {
-						shortID := sid
-						if len(shortID) > 8 {
-							shortID = shortID[:8]
-						}
+						proj := filepath.Base(s.Project)
 						if err := switcher.Switch(s); err != nil {
 							m.statusMsg = fmt.Sprintf("Error: %v", err)
 						} else {
-							m.statusMsg = fmt.Sprintf("Switched to %s", shortID)
+							m.statusMsg = fmt.Sprintf("Switched to %s", proj)
 						}
 						m.statusUntil = time.Now().Add(3 * time.Second)
 						break
