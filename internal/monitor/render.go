@@ -21,14 +21,14 @@ type columnWidths struct {
 func RenderOnce(sessions []session.Session, width int, debug bool) string {
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	return renderView(sessions, sp, width, nil, "", false, false, true, debug)
+	return renderView(sessions, sp, width, nil, "", false, true, debug)
 }
 
-func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, sortByLatest bool, showSummary bool, debug bool) string {
-	return renderView(sessions, sp, width, flashUntil, statusMsg, true, sortByLatest, showSummary, debug)
+func render(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, showSummary bool, debug bool) string {
+	return renderView(sessions, sp, width, flashUntil, statusMsg, true, showSummary, debug)
 }
 
-func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, sortByLatest bool, showSummary bool, debug bool) string {
+func renderView(sessions []session.Session, sp spinner.Model, width int, flashUntil map[string]time.Time, statusMsg string, interactive bool, showSummary bool, debug bool) string {
 	if width == 0 {
 		width = 80
 	}
@@ -37,12 +37,12 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 		s := titleStyle.Render("ccmonitor") + "\n\n" +
 			idleStyle.Render("No active sessions.")
 		if interactive {
-			s += "\n" + helpStyle.Render("q quit · s sort · p prompt/title · click to switch pane")
+			s += "\n" + renderHelp(showSummary)
 		}
 		return s
 	}
 
-	groups := session.GroupByProject(sessions, sortByLatest)
+	groups := session.GroupByProject(sessions)
 
 	// Box width accounts for border (2) and padding (2)
 	boxWidth := width - 4
@@ -80,10 +80,25 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 		if statusMsg != "" {
 			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render(statusMsg) + "\n")
 		}
-		b.WriteString(helpStyle.Render("q quit · s sort · p prompt/title · click to switch pane"))
+		b.WriteString(renderHelp(showSummary))
 	}
 
 	return b.String()
+}
+
+func renderHelp(showSummary bool) string {
+	faint := lipgloss.NewStyle().Faint(true).Render
+	bold := lipgloss.NewStyle().Bold(true).Render
+
+	var toggle string
+	if showSummary {
+		toggle = faint("p prompt/") + bold("title")
+	} else {
+		toggle = faint("p ") + bold("prompt") + faint("/title")
+	}
+
+	line := faint("q quit · ") + toggle + faint(" · click to switch pane")
+	return helpStyle.Render(line)
 }
 
 func renderSummary(sessions []session.Session) string {
@@ -167,14 +182,14 @@ func flashPhase(now time.Time, until time.Time) int {
 // buildClickMap scans the rendered view for tree connectors (├─ / └─) and maps
 // their Y line numbers to session IDs. Connectors appear in the same order as
 // sessions are rendered, so we flatten the groups and match by position.
-func buildClickMap(sessions []session.Session, view string, sortByLatest bool) map[int]string {
+func buildClickMap(sessions []session.Session, view string) map[int]string {
 	clickMap := make(map[int]string)
 	if len(sessions) == 0 {
 		return clickMap
 	}
 
 	// Flatten sessions in render order.
-	groups := session.GroupByProject(sessions, sortByLatest)
+	groups := session.GroupByProject(sessions)
 	var ordered []session.Session
 	for _, g := range groups {
 		ordered = append(ordered, g.Sessions...)

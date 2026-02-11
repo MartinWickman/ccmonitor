@@ -164,7 +164,7 @@ func TestLoadAll(t *testing.T) {
 
 func TestGroupByProject(t *testing.T) {
 	t.Run("empty input should return no groups", func(t *testing.T) {
-		groups := GroupByProject(nil, false)
+		groups := GroupByProject(nil)
 		if len(groups) != 0 {
 			t.Errorf("got %d groups, want 0", len(groups))
 		}
@@ -177,7 +177,7 @@ func TestGroupByProject(t *testing.T) {
 			{SessionID: "s3", Project: "/b-project", LastActivity: "2026-01-02T00:00:00Z"},
 		}
 
-		groups := GroupByProject(sessions, false)
+		groups := GroupByProject(sessions)
 		if len(groups) != 2 {
 			t.Fatalf("got %d groups, want 2", len(groups))
 		}
@@ -189,13 +189,13 @@ func TestGroupByProject(t *testing.T) {
 		}
 	})
 
-	t.Run("sessions within a group should be sorted by session ID by default", func(t *testing.T) {
+	t.Run("sessions within a group should be sorted by session ID", func(t *testing.T) {
 		sessions := []Session{
 			{SessionID: "bbb", Project: "/proj", LastActivity: "2026-01-02T00:00:00Z"},
 			{SessionID: "aaa", Project: "/proj", LastActivity: "2026-01-01T00:00:00Z"},
 		}
 
-		groups := GroupByProject(sessions, false)
+		groups := GroupByProject(sessions)
 		if len(groups) != 1 {
 			t.Fatalf("got %d groups, want 1", len(groups))
 		}
@@ -204,20 +204,6 @@ func TestGroupByProject(t *testing.T) {
 		}
 	})
 
-	t.Run("sortByLatest should sort sessions by most recent activity first", func(t *testing.T) {
-		sessions := []Session{
-			{SessionID: "aaa", Project: "/proj", LastActivity: "2026-01-01T00:00:00Z"},
-			{SessionID: "bbb", Project: "/proj", LastActivity: "2026-01-02T00:00:00Z"},
-		}
-
-		groups := GroupByProject(sessions, true)
-		if len(groups) != 1 {
-			t.Fatalf("got %d groups, want 1", len(groups))
-		}
-		if groups[0].Sessions[0].SessionID != "bbb" {
-			t.Errorf("first session is %q, want %q (most recent first)", groups[0].Sessions[0].SessionID, "bbb")
-		}
-	})
 }
 
 func TestTimeSince(t *testing.T) {

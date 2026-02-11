@@ -49,8 +49,6 @@ type Model struct {
 	statusMsg string
 	// statusUntil is when to clear the status message.
 	statusUntil time.Time
-	// sortByLatest toggles session sort order: false=by session ID, true=by latest activity.
-	sortByLatest bool
 	// showSummary toggles subtitle display: true=prefer summary, false=prefer prompt.
 	showSummary bool
 	// debug shows session IDs and PIDs in the display.
@@ -89,9 +87,8 @@ func New(sessionsDir string, debug bool) Model {
 		spinner:     s,
 		lastState:   map[string]string{},
 		flashUntil:  map[string]time.Time{},
-		showSummary:  false,
-		sortByLatest: false,
-		debug:        debug,
+		showSummary: false,
+		debug:       debug,
 	}
 }
 
@@ -105,9 +102,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "s":
-			m.sortByLatest = !m.sortByLatest
-			return m, nil
 		case "p":
 			m.showSummary = !m.showSummary
 			return m, nil
@@ -138,8 +132,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
 		CheckPIDLiveness(m.sessions)
 		// Build click map by scanning the actual rendered view for session IDs.
-		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary, m.debug)
-		m.clickMap = buildClickMap(m.sessions, view, m.sortByLatest)
+		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.showSummary, m.debug)
+		m.clickMap = buildClickMap(m.sessions, view)
 		now := time.Now()
 		newFlash := false
 		for _, s := range m.sessions {
@@ -183,5 +177,5 @@ func (m Model) View() string {
 	if m.statusMsg != "" && time.Now().Before(m.statusUntil) {
 		status = m.statusMsg
 	}
-	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.sortByLatest, m.showSummary, m.debug)
+	return render(m.sessions, m.spinner, m.width, m.flashUntil, status, m.showSummary, m.debug)
 }

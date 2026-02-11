@@ -37,7 +37,7 @@ func TestFlashPhase(t *testing.T) {
 
 func TestBuildClickMap(t *testing.T) {
 	t.Run("empty sessions should return empty map", func(t *testing.T) {
-		got := buildClickMap(nil, "some view\ncontent\n", false)
+		got := buildClickMap(nil, "some view\ncontent\n")
 		if len(got) != 0 {
 			t.Errorf("got %d entries, want 0", len(got))
 		}
@@ -48,7 +48,7 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
 		view := "header\nsummary\n├─ Fix the bug\n   Working  Edit main.go\n"
-		got := buildClickMap(sessions, view, false)
+		got := buildClickMap(sessions, view)
 		if got[2] != "abcd1234-full-id" {
 			t.Errorf("line 2: got %q, want %q", got[2], "abcd1234-full-id")
 		}
@@ -63,7 +63,7 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
 		view := "header\n└─ Fix the bug\n   Working  Edit main.go\nfooter\n"
-		got := buildClickMap(sessions, view, false)
+		got := buildClickMap(sessions, view)
 		if got[1] != "abcd1234-full-id" {
 			t.Errorf("line 1: got %q, want %q", got[1], "abcd1234-full-id")
 		}
@@ -78,7 +78,7 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "bbbbbbbb-2222", Project: "/p"},
 		}
 		view := "header\n├─ First task\n│  Working\n└─ Second task\n   Idle\nfooter\n"
-		got := buildClickMap(sessions, view, false)
+		got := buildClickMap(sessions, view)
 		if got[1] != "aaaaaaaa-1111" {
 			t.Errorf("line 1: got %q, want %q", got[1], "aaaaaaaa-1111")
 		}
@@ -98,7 +98,7 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
 		view := "header line\nproject title\n├─ Fix the bug\n   Working\n"
-		got := buildClickMap(sessions, view, false)
+		got := buildClickMap(sessions, view)
 		if _, ok := got[0]; ok {
 			t.Errorf("header line should not be mapped")
 		}
