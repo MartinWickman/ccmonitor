@@ -115,7 +115,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update hover state on any mouse event
 		m.hoverSID = m.clickMap[msg.Y]
 
-		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if sid, ok := m.clickMap[msg.Y]; ok {
 				// Find the session to switch to
 				for _, s := range m.sessions {

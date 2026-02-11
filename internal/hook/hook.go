@@ -253,9 +253,9 @@ foreach ($w in $wtWindows) {
 func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
 	var ti termInfo
 	if os.Getenv("WT_SESSION") != "" {
-		if hookEvent == "SessionStart" {
+		if hookEvent == "SessionStart" || existingRuntimeID == "" {
 			ti.runtimeID, ti.summary = wtTabInfo()
-		} else if existingRuntimeID != "" {
+		} else {
 			ti.summary = wtTabTitle(existingRuntimeID)
 		}
 	}
