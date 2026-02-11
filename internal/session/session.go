@@ -113,6 +113,28 @@ func TimeSince(timestamp string) string {
 	}
 }
 
+// CleanAll removes all .json session files from dir and returns the count removed.
+func CleanAll(dir string) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err == nil {
+			removed++
+		}
+	}
+	return removed, nil
+}
+
 // LoadFile reads and parses a single session file. Exported for use by the hook package.
 func LoadFile(path string) (*Session, error) {
 	return loadFile(path)

@@ -22,10 +22,21 @@ func main() {
 	}
 
 	once := flag.Bool("once", false, "print current state and exit")
+	clean := flag.Bool("clean", false, "remove all session files and exit")
 	debug := flag.Bool("debug", false, "show session IDs and PIDs")
 	flag.Parse()
 
 	dir := session.Dir()
+
+	if *clean {
+		removed, err := session.CleanAll(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Removed %d session file(s) from %s\n", removed, dir)
+		return
+	}
 
 	if *once {
 		sessions, err := session.LoadAll(dir)
