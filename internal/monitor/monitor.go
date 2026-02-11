@@ -141,7 +141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		CheckPIDLiveness(m.sessions)
 		// Build click map by scanning the actual rendered view for session IDs.
 		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.sortByLatest, m.showSummary, m.debug)
-		m.clickMap = buildClickMap(m.sessions, view)
+		m.clickMap = buildClickMap(m.sessions, view, m.sortByLatest)
 		now := time.Now()
 		newFlash := false
 		for _, s := range m.sessions {

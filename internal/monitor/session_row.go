@@ -133,15 +133,25 @@ func (r sessionRow) render(w columnWidths) string {
 		}
 	}
 
-	// Line 2: indent + status + detail + elapsed
+	// Line 2: indent + status + detail ... elapsed (right-aligned)
 	indent := lipgloss.NewStyle().Faint(true).Render("│") + "  "
 	if r.isLast {
 		indent = "   "
 	}
-	line2 := indent +
+	leftPart := indent +
 		padRight(r.status, w.status) + "  " +
-		padRight(r.detail, w.detail) + "  " +
-		elapsed
+		r.detail
+
+	elapsedWidth := lipgloss.Width(elapsed)
+	leftWidth := lipgloss.Width(leftPart)
+	// Right-align elapsed to contentWidth, with at least 2 spaces gap
+	targetWidth := w.contentWidth - elapsedWidth
+	if targetWidth > leftWidth+2 {
+		leftPart = leftPart + strings.Repeat(" ", targetWidth-leftWidth)
+	} else {
+		leftPart = leftPart + "  "
+	}
+	line2 := leftPart + elapsed
 
 	return line1 + "\n" + line2 + "\n"
 }
@@ -160,7 +170,6 @@ func (r sessionRow) widths() columnWidths {
 	return columnWidths{
 		conn:   lipgloss.Width(r.connector),
 		status: lipgloss.Width(r.status),
-		detail: lipgloss.Width(r.detail),
 	}
 }
 

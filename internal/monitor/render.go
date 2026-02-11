@@ -13,7 +13,8 @@ import (
 
 // columnWidths holds the computed widths for each column.
 type columnWidths struct {
-	conn, status, detail int
+	conn, status int
+	contentWidth int // total available width inside the box
 }
 
 // RenderOnce produces a single snapshot of the current sessions for non-interactive output.
@@ -66,6 +67,7 @@ func renderView(sessions []session.Session, sp spinner.Model, width int, flashUn
 		allRows = append(allRows, rows...)
 	}
 	w := computeWidths(allRows)
+	w.contentWidth = boxWidth - 2 // subtract left+right padding (1 each)
 
 	boxStyle := projectBoxStyle.Width(boxWidth)
 
@@ -127,7 +129,6 @@ func computeWidths(allRows []sessionRow) columnWidths {
 		rw := r.widths()
 		w.conn = max(w.conn, rw.conn)
 		w.status = max(w.status, rw.status)
-		w.detail = max(w.detail, rw.detail)
 	}
 	return w
 }
@@ -163,50 +164,36 @@ func flashPhase(now time.Time, until time.Time) int {
 	return 2 // off
 }
 
-// buildClickMap scans the rendered view for truncated session IDs and maps
-// their Y line numbers to full session IDs. This approach is immune to
-// layout changes (margins, borders, padding) since it matches actual content.
-func buildClickMap(sessions []session.Session, view string) map[int]string {
+// buildClickMap scans the rendered view for tree connectors (├─ / └─) and maps
+// their Y line numbers to session IDs. Connectors appear in the same order as
+// sessions are rendered, so we flatten the groups and match by position.
+func buildClickMap(sessions []session.Session, view string, sortByLatest bool) map[int]string {
 	clickMap := make(map[int]string)
 	if len(sessions) == 0 {
 		return clickMap
 	}
 
-	// Build a lookup from truncated ID → full session ID.
-	shortToFull := make(map[string]string, len(sessions))
-	for _, s := range sessions {
-		short := s.SessionID
-		if len(short) > 8 {
-			short = short[:8]
-		}
-		shortToFull[short] = s.SessionID
+	// Flatten sessions in render order.
+	groups := session.GroupByProject(sessions, sortByLatest)
+	var ordered []session.Session
+	for _, g := range groups {
+		ordered = append(ordered, g.Sessions...)
 	}
 
 	lines := strings.Split(view, "\n")
+	sessionIdx := 0
 	for y, line := range lines {
-		for short, full := range shortToFull {
-			if strings.Contains(line, short) {
-				clickMap[y] = full
-				// Also map the prompt line directly below, if it exists and
-				// isn't already mapped to a different session.
-				if y+1 < len(lines) {
-					if _, taken := clickMap[y+1]; !taken {
-						// Only map if the next line doesn't contain any session ID
-						// (which would mean it's another session row, not a prompt).
-						isSessionRow := false
-						for s := range shortToFull {
-							if strings.Contains(lines[y+1], s) {
-								isSessionRow = true
-								break
-							}
-						}
-						if !isSessionRow {
-							clickMap[y+1] = full
-						}
-					}
-				}
-				break
+		if sessionIdx >= len(ordered) {
+			break
+		}
+		if strings.Contains(line, "├─") || strings.Contains(line, "└─") {
+			sid := ordered[sessionIdx].SessionID
+			clickMap[y] = sid
+			// Also map the status line directly below.
+			if y+1 < len(lines) {
+				clickMap[y+1] = sid
 			}
+			sessionIdx++
 		}
 	}
 

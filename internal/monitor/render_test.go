@@ -37,18 +37,18 @@ func TestFlashPhase(t *testing.T) {
 
 func TestBuildClickMap(t *testing.T) {
 	t.Run("empty sessions should return empty map", func(t *testing.T) {
-		got := buildClickMap(nil, "some view\ncontent\n")
+		got := buildClickMap(nil, "some view\ncontent\n", false)
 		if len(got) != 0 {
 			t.Errorf("got %d entries, want 0", len(got))
 		}
 	})
 
-	t.Run("line containing session ID should be mapped", func(t *testing.T) {
+	t.Run("connector line should be mapped to session", func(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header\nsummary\n├─ Fix the bug (abcd1234)\n   Working  Edit main.go\n"
-		got := buildClickMap(sessions, view)
+		view := "header\nsummary\n├─ Fix the bug\n   Working  Edit main.go\n"
+		got := buildClickMap(sessions, view, false)
 		if got[2] != "abcd1234-full-id" {
 			t.Errorf("line 2: got %q, want %q", got[2], "abcd1234-full-id")
 		}
@@ -58,17 +58,17 @@ func TestBuildClickMap(t *testing.T) {
 		}
 	})
 
-	t.Run("status line below ID line should be mapped", func(t *testing.T) {
+	t.Run("last connector maps correctly", func(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header\n├─ abcd1234\n   Working  Edit main.go\nfooter\n"
-		got := buildClickMap(sessions, view)
+		view := "header\n└─ Fix the bug\n   Working  Edit main.go\nfooter\n"
+		got := buildClickMap(sessions, view, false)
 		if got[1] != "abcd1234-full-id" {
-			t.Errorf("ID line 1: got %q, want %q", got[1], "abcd1234-full-id")
+			t.Errorf("line 1: got %q, want %q", got[1], "abcd1234-full-id")
 		}
 		if got[2] != "abcd1234-full-id" {
-			t.Errorf("status line 2: got %q, want %q", got[2], "abcd1234-full-id")
+			t.Errorf("line 2: got %q, want %q", got[2], "abcd1234-full-id")
 		}
 	})
 
@@ -77,9 +77,8 @@ func TestBuildClickMap(t *testing.T) {
 			{SessionID: "aaaaaaaa-1111", Project: "/p"},
 			{SessionID: "bbbbbbbb-2222", Project: "/p"},
 		}
-		// Each session now takes 2 lines: ID line + status line
-		view := "header\n├─ aaaaaaaa\n│  Working\n└─ bbbbbbbb\n   Idle\nfooter\n"
-		got := buildClickMap(sessions, view)
+		view := "header\n├─ First task\n│  Working\n└─ Second task\n   Idle\nfooter\n"
+		got := buildClickMap(sessions, view, false)
 		if got[1] != "aaaaaaaa-1111" {
 			t.Errorf("line 1: got %q, want %q", got[1], "aaaaaaaa-1111")
 		}
@@ -94,12 +93,12 @@ func TestBuildClickMap(t *testing.T) {
 		}
 	})
 
-	t.Run("lines without any session ID should not be mapped", func(t *testing.T) {
+	t.Run("lines without connectors should not be mapped", func(t *testing.T) {
 		sessions := []session.Session{
 			{SessionID: "abcd1234-full-id", Project: "/p"},
 		}
-		view := "header line\nproject title\n├─ abcd1234\n   Working\n"
-		got := buildClickMap(sessions, view)
+		view := "header line\nproject title\n├─ Fix the bug\n   Working\n"
+		got := buildClickMap(sessions, view, false)
 		if _, ok := got[0]; ok {
 			t.Errorf("header line should not be mapped")
 		}

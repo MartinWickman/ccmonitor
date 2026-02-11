@@ -46,7 +46,7 @@ func TestSessionRowRender(t *testing.T) {
 			LastActivity: time.Now().Add(-2 * time.Minute).Format(time.RFC3339),
 		}
 		row := newSessionRow(s, true, sp, nil, true, true)
-		w := columnWidths{conn: 4, status: 12, detail: 20}
+		w := columnWidths{conn: 4, status: 12, contentWidth: 80}
 		output := row.render(w)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
@@ -81,7 +81,7 @@ func TestSessionRowRender(t *testing.T) {
 			LastActivity: time.Now().Format(time.RFC3339),
 		}
 		row := newSessionRow(s, false, sp, nil, true, true)
-		w := columnWidths{conn: 4, status: 12, detail: 20}
+		w := columnWidths{conn: 4, status: 12, contentWidth: 80}
 		output := row.render(w)
 
 		lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
