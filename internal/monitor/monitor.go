@@ -116,12 +116,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for _, s := range m.sessions {
 					if s.SessionID == sid {
 						proj := filepath.Base(s.Project)
-						if err := switcher.Switch(s); err != nil {
-							m.statusMsg = fmt.Sprintf("Error: %v", err)
-						} else {
-							m.statusMsg = fmt.Sprintf("Switched to %s", proj)
-						}
+						m.statusMsg = fmt.Sprintf("Switching to %s...", proj)
 						m.statusUntil = time.Now().Add(3 * time.Second)
+						sess := s // capture for goroutine
+						go func() {
+							switcher.Switch(sess)
+						}()
 						break
 					}
 				}
