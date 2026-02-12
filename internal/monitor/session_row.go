@@ -47,7 +47,7 @@ func newSessionRow(s session.Session, isLast bool, sp spinner.Model, flashUntil 
 
 	detail := s.Detail
 	if len(detail) > 40 {
-		detail = detail[:37] + "..."
+		detail = detail[:38] + " …"
 	}
 
 	// Treat default "Claude Code" tab title as empty — it's not useful.
@@ -142,8 +142,8 @@ func (r sessionRow) render(w columnWidths, hovered bool) string {
 			available = 0
 		}
 		if len(prompt) > available {
-			if available > 3 {
-				prompt = prompt[:available-3] + "..."
+			if available > 2 {
+				prompt = prompt[:available-2] + "…"
 			} else {
 				prompt = prompt[:available]
 			}
@@ -173,7 +173,7 @@ func (r sessionRow) render(w columnWidths, hovered bool) string {
 				textStyle.Render(prompt)
 		} else {
 			line1 = padRight(styledConn, w.conn) + " " +
-				faintStyle.Render("...")
+				faintStyle.Render("…")
 		}
 	}
 
