@@ -1,6 +1,6 @@
 # Claude Code Monitor
 
-**A terminal dashboard for Claude Code instances.**
+**A terminal dashboard for Claude Code sessions.**
 
 `ccmonitor` shows you what every CC instance is doing *right now* or if any of them are waiting for your response.
 So hopefully less hunting for correct terminal tab...
@@ -14,22 +14,42 @@ So hopefully less hunting for correct terminal tab...
 
 ## Install
 
-Build from source (requires [Go](https://go.dev/) 1.24+):
+Two steps. Install the binary and register the hooks:
+
+### 1. Install the binary
+
+**Manual download**: grab the binary for your platform from [GitHub Releases](https://github.com/martinwickman/ccmonitor/releases) and put it somewhere in the $PATH.
+
+**Quick install** (Linux/macOS):
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/martinwickman/ccmonitor/main/install.sh | sh
+```
+
+Or specify version and install directory:
+
+```sh
+curl -sSfL https://raw.githubusercontent.com/martinwickman/ccmonitor/main/install.sh | sh -s -- -b ~/.local/bin v0.8.0
+```
+
+**From source** (requires [Go](https://go.dev/) 1.24+):
 
 ```sh
 go install github.com/martinwickman/ccmonitor/cmd/ccmonitor@latest
 ```
 
-Then register the hooks as a Claude Code plugin:
+### 2. Register the hooks
+
+In any Claude Code session, run:
 
 ```
-/plugin marketplace add ./plugin
+/plugin marketplace add MartinWickman/ccmonitor
 /plugin install ccmonitor
 ```
 
-This registers hooks for all 7 Claude Code lifecycle events.
+**Manual installation:** Edit your ~/.claude/setings.json file by adding the hooks. See the `plugin` directory.
 
-Note: `ccmonitor` should be placed in your PATH or the hooks wont work.
+The `ccmonitor` binary must be on your PATH for the hooks to work.
 
 ## Usage
 
@@ -81,6 +101,6 @@ Remove the hooks:
 
 ## Future work
 
-* Should support more terminals (e.g. Iterm2 etc)
+* Should support more terminals for click-to-tab (e.g. Iterm2 etc)
 * Running the display in a browser
-* Possibly respond to Claude Code via the monitor. 
+* Possibly control Claude Code via the monitor. 
