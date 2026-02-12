@@ -1,6 +1,9 @@
-# Claude Code Monitor
+<div align="center">
+  <img src="icon.svg" width="100px" alt="GitHub Readme Stats" />
+  <h1 style="font-size: 28px; margin: 10px 0;">Claude Code Monitor</h1>
+  <p>A terminal dashboard for Claude Code sessions!</p>
+</div>
 
-**A terminal dashboard for Claude Code sessions.**
 
 `ccmonitor` shows you what every CC instance is doing *right now* or if any of them are waiting for your response.
 So hopefully less hunting for correct terminal tab...
@@ -12,7 +15,7 @@ So hopefully less hunting for correct terminal tab...
 
 ![](recording.gif)
 
-## Install
+# Install
 
 Two steps. Install the binary and register the hooks:
 
@@ -45,7 +48,7 @@ In any Claude Code session, run:
 
 Note that the `ccmonitor` binary must be on your $PATH for the hooks to work.
 
-## Usage
+# Usage
 
 Open your terminal and run:
 
@@ -54,7 +57,7 @@ ccmonitor
 ```
 
 - Press `q` to quit
-- 'p' to toggle between prompt or summary display
+- `p` to toggle between prompt or summary display
 - Click a session to switch to its tmux pane or Windows Terminal tab.
 
 Print a one-time snapshot and exit:
@@ -62,6 +65,7 @@ Print a one-time snapshot and exit:
 ```sh
 ccmonitor --once
 ```
+
 ## Quirks
 
 `ccmonitor` cleans up dead sessions automatically. However, the way
@@ -80,17 +84,17 @@ Works on Windows, Linux, and macOS. The plugin hooks call `ccmonitor hook` direc
 | Click-to-switch tmux  | Yes         | Yes     |
 | Click-to-switch WT tab| —           | Yes     |
 
-## Uninstall
+# Uninstall
 
 Remove the hooks: `/plugin uninstall ccmonitor`
 
 Remove the binary: `rm $(which ccmonitor)`
 
-## How it works
+# How it works
 
 The hooks report session status by keeping state in your home directory (`~/.ccmonitor/`) which the mononitor reads and displays.
 
-## Future work
+# Future work
 
 * Add click-to-tab support for more terminals (e.g. Iterm2 etc)
 * Show the display in a browser
