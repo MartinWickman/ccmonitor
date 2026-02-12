@@ -93,7 +93,7 @@ Remove the binary: `rm $(which ccmonitor)`
 
 # How it works
 
-The hooks report session status by keeping state in your home directory (`~/.ccmonitor/`) which the mononitor reads and displays.
+The hooks report session status by keeping state in your home directory (`~/.ccmonitor/`) which the monitor reads and displays.
 
 # Future work
 
