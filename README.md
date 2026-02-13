@@ -41,7 +41,7 @@ go install github.com/martinwickman/ccmonitor/cmd/ccmonitor@latest
 In any Claude Code session, run:
 
 ```
-/plugin marketplace add martinwickman/claude-plugins
+/plugin marketplace add martinwickman/cc-plugins
 /plugin install ccmonitor
 ```
 
