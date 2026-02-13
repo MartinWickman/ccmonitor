@@ -2,7 +2,11 @@ package monitor
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -58,20 +62,106 @@ type Model struct {
 }
 
 // CheckPIDLiveness marks sessions with dead PIDs as "exited".
+// Sessions record the OS they were created on. When the monitor runs on a
+// different OS (e.g. Windows .exe reading WSL sessions), it uses the
+// appropriate method to check each PID.
 func CheckPIDLiveness(sessions []session.Session) {
+	alive := alivePIDs(sessions)
 	for i := range sessions {
 		if sessions[i].PID <= 0 {
 			continue
 		}
-		proc, err := ps.FindProcess(sessions[i].PID)
-		if err != nil {
-			continue
-		}
-		if proc == nil {
+		if !alive[sessions[i].PID] {
 			sessions[i].Status = session.StatusExited
 			sessions[i].Detail = "Process ended"
 		}
 	}
+}
+
+// alivePIDs returns the set of PIDs that are still running.
+// Sessions record which OS they were created on. When the monitor runs on a
+// different OS, cross-platform checks are used:
+//   - Windows monitor + Linux session → batch-check via "wsl kill -0"
+//   - Linux monitor + Windows session → batch-check via "powershell.exe Get-Process"
+//   - Same OS → native go-ps
+func alivePIDs(sessions []session.Session) map[int]bool {
+	alive := make(map[int]bool)
+	var wslPIDs, winPIDs []int
+
+	for i := range sessions {
+		if sessions[i].PID <= 0 {
+			continue
+		}
+		switch {
+		case runtime.GOOS == "windows" && sessions[i].OS != "windows":
+			wslPIDs = append(wslPIDs, sessions[i].PID)
+		case runtime.GOOS != "windows" && sessions[i].OS == "windows":
+			winPIDs = append(winPIDs, sessions[i].PID)
+		default:
+			alive[sessions[i].PID] = isNativePIDAlive(sessions[i].PID)
+		}
+	}
+
+	for pid, ok := range checkWSLPIDs(wslPIDs) {
+		alive[pid] = ok
+	}
+	for pid, ok := range checkWindowsPIDs(winPIDs) {
+		alive[pid] = ok
+	}
+
+	return alive
+}
+
+// isNativePIDAlive checks a PID using the native OS process table (go-ps).
+func isNativePIDAlive(pid int) bool {
+	proc, err := ps.FindProcess(pid)
+	if err != nil {
+		return true // assume alive on error
+	}
+	return proc != nil
+}
+
+// checkWSLPIDs checks Linux PIDs from Windows via "wsl kill -0 <pid>".
+func checkWSLPIDs(pids []int) map[int]bool {
+	alive := make(map[int]bool)
+	for _, pid := range pids {
+		if exec.Command("wsl", "kill", "-0", strconv.Itoa(pid)).Run() == nil {
+			alive[pid] = true
+		}
+	}
+	return alive
+}
+
+// checkWindowsPIDs batch-checks Windows PIDs from WSL via powershell.exe.
+func checkWindowsPIDs(pids []int) map[int]bool {
+	alive := make(map[int]bool)
+	if len(pids) == 0 {
+		return alive
+	}
+	var pidList string
+	for _, pid := range pids {
+		if pidList != "" {
+			pidList += ","
+		}
+		pidList += strconv.Itoa(pid)
+	}
+	script := pidList + " | ForEach-Object { if (Get-Process -Id $_ -ErrorAction SilentlyContinue) { $_ } }"
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", script).Output()
+	if err != nil {
+		return alive
+	}
+	return parseAlivePIDs(string(out))
+}
+
+// parseAlivePIDs extracts PIDs from newline-separated output.
+func parseAlivePIDs(output string) map[int]bool {
+	alive := make(map[int]bool)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
+			alive[pid] = true
+		}
+	}
+	return alive
 }
 
 // New creates a new monitor model that reads from the given directory.

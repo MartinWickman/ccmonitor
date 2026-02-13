@@ -32,6 +32,7 @@ type Session struct {
 	Summary          string  `json:"summary"`
 	RuntimeID        string  `json:"wt_tab_id,omitempty"`
 	PID              int     `json:"pid,omitempty"`
+	OS               string  `json:"os,omitempty"`
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.

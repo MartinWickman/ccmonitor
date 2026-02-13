@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode"
@@ -238,12 +239,15 @@ func findParentPID() int {
 // cleanupSamePID removes session files that share a PID with the current session
 // but have a different session ID. This handles the case where Claude Code starts
 // a new session (e.g. via /clear) without firing SessionEnd for the old one.
+// Only removes sessions from the same OS, since PIDs are only meaningful within
+// the same OS (a Linux PID 1234 is unrelated to Windows PID 1234).
 func cleanupSamePID(dir, currentSessionID string, currentPID int) {
 	if currentPID <= 0 {
 		return
 	}
 	session.ForEachSessionFile(dir, func(path string, s *session.Session) {
-		if s.SessionID != currentSessionID && s.PID == currentPID {
+		if s.SessionID != currentSessionID && s.PID == currentPID &&
+			(s.OS == "" || s.OS == runtime.GOOS) {
 			os.Remove(path) // best-effort
 		}
 	})
@@ -251,10 +255,15 @@ func cleanupSamePID(dir, currentSessionID string, currentPID int) {
 
 // cleanupDead removes session files whose PID is no longer alive.
 // Files with PID 0 (legacy or unknown) and corrupt files are skipped.
+// Only checks sessions from the same OS, since go-ps can only see native PIDs
+// (a WSL hook can't check Windows PIDs and vice versa).
 func cleanupDead(dir string) error {
 	return session.ForEachSessionFile(dir, func(path string, s *session.Session) {
 		if s.PID <= 0 {
 			return // no PID recorded, can't check
+		}
+		if s.OS != "" && s.OS != runtime.GOOS {
+			return // different OS, can't check from here
 		}
 		proc, err := ps.FindProcess(s.PID)
 		if err != nil {
@@ -363,6 +372,7 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 		Summary:          summary,
 		RuntimeID:        runtimeID,
 		PID:              pid,
+		OS:               runtime.GOOS,
 	}
 
 	// Remove stale session files from the same PID (handles --continue/--resume
