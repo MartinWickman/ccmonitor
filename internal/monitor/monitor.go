@@ -3,7 +3,6 @@ package monitor
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -210,7 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Find the session to switch to
 				for _, s := range m.sessions {
 					if s.SessionID == sid {
-						proj := filepath.Base(s.Project)
+						proj := baseName(s.Project)
 						m.statusMsg = fmt.Sprintf("Switching to %s...", proj)
 						m.statusUntil = time.Now().Add(3 * time.Second)
 						sess := s // capture for goroutine

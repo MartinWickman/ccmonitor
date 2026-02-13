@@ -148,10 +148,24 @@ func computeWidths(allRows []sessionRow) columnWidths {
 	return w
 }
 
+// baseName extracts the last path component, handling both forward and
+// backslash separators so Windows paths work correctly on Linux/WSL.
+func baseName(path string) string {
+	// Try the native separator first, then the other one.
+	name := filepath.Base(path)
+	if i := strings.LastIndex(name, "\\"); i >= 0 {
+		name = name[i+1:]
+	}
+	if name == "" {
+		return path
+	}
+	return name
+}
+
 func renderProjectGroup(g session.ProjectGroup, rows []sessionRow, w columnWidths, hoverSID string) string {
 	var b strings.Builder
 
-	dirName := filepath.Base(g.Project)
+	dirName := baseName(g.Project)
 	title := projectStyle.Render(dirName) + " " + projectPathStyle.Render(g.Project)
 	b.WriteString(title + "\n")
 	b.WriteString(lipgloss.NewStyle().Faint(true).Render("│") + "\n")
