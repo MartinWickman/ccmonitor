@@ -234,7 +234,7 @@ execute() {
 
   echo ""
   echo "Next, register the hooks in any Claude Code session:"
-  echo "  /plugin marketplace add MartinWickman/ccmonitor"
+  echo "  /plugin marketplace add martinwickman/claude-plugins"
   echo "  /plugin install ccmonitor"
 }
 
