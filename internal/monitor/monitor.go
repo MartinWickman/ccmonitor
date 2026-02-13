@@ -58,6 +58,8 @@ type Model struct {
 	debug bool
 	// hoverSID is the session ID currently under the mouse cursor.
 	hoverSID string
+	// lastPIDCheck is when CheckPIDLiveness was last run.
+	lastPIDCheck time.Time
 }
 
 // CheckPIDLiveness marks sessions with dead PIDs as "exited".
@@ -173,13 +175,14 @@ func New(sessionsDir string, debug bool) Model {
 	s.Style = workingStyle
 
 	return Model{
-		sessionsDir: sessionsDir,
-		sessions:    sessions,
-		spinner:     s,
-		lastState:   map[string]string{},
-		flashUntil:  map[string]time.Time{},
-		showSummary: false,
-		debug:       debug,
+		sessionsDir:  sessionsDir,
+		sessions:     sessions,
+		spinner:      s,
+		lastState:    map[string]string{},
+		flashUntil:   map[string]time.Time{},
+		showSummary:  false,
+		debug:        debug,
+		lastPIDCheck: time.Now(),
 	}
 }
 
@@ -224,7 +227,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tickMsg:
 		m.sessions, _ = session.LoadAll(m.sessionsDir)
-		CheckPIDLiveness(m.sessions)
+		if time.Since(m.lastPIDCheck) >= 10*time.Second {
+			CheckPIDLiveness(m.sessions)
+			m.lastPIDCheck = time.Now()
+		}
 		// Build click map by scanning the actual rendered view for session IDs.
 		view := render(m.sessions, m.spinner, m.width, m.flashUntil, "", m.showSummary, m.debug, "")
 		m.clickMap = buildClickMap(m.sessions, view)
