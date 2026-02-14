@@ -121,7 +121,7 @@ func TestLoadAll(t *testing.T) {
 		}
 	})
 
-	t.Run("missing tmux_pane field should default to empty string", func(t *testing.T) {
+	t.Run("missing terminals field should default to nil", func(t *testing.T) {
 		dir := t.TempDir()
 		data := []byte(`{"session_id":"old1","project":"/p","status":"idle"}`)
 		if err := os.WriteFile(filepath.Join(dir, "old1.json"), data, 0644); err != nil {
@@ -135,8 +135,8 @@ func TestLoadAll(t *testing.T) {
 		if len(sessions) != 1 {
 			t.Fatalf("got %d sessions, want 1", len(sessions))
 		}
-		if sessions[0].TmuxPane != "" {
-			t.Errorf("got tmux_pane %q, want empty string", sessions[0].TmuxPane)
+		if sessions[0].Terminals != nil {
+			t.Errorf("got terminals %v, want nil", sessions[0].Terminals)
 		}
 	})
 

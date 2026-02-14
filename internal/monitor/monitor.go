@@ -22,6 +22,9 @@ type tickMsg time.Time
 // flashTickMsg is sent on a faster interval for smooth flash animation.
 type flashTickMsg time.Time
 
+// switchResultMsg carries the result of an async tab/pane switch.
+type switchResultMsg struct{ err error }
+
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
@@ -203,6 +206,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		return m, nil
+	case switchResultMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Switch failed: %v", msg.err)
+		} else {
+			m.statusMsg = "Switched!"
+		}
+		m.statusUntil = time.Now().Add(3 * time.Second)
+		return m, nil
 	case tea.MouseMsg:
 		// Update hover state on any mouse event
 		m.hoverSID = m.clickMap[msg.Y]
@@ -215,11 +226,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						proj := baseName(s.Project)
 						m.statusMsg = fmt.Sprintf("Switching to %s...", proj)
 						m.statusUntil = time.Now().Add(3 * time.Second)
-						sess := s // capture for goroutine
-						go func() {
-							switcher.Switch(sess)
-						}()
-						break
+						sess := s
+						return m, func() tea.Msg {
+							ch := make(chan error, 1)
+							go func() { ch <- switcher.Switch(sess) }()
+							select {
+							case err := <-ch:
+								return switchResultMsg{err: err}
+							case <-time.After(10 * time.Second):
+								return switchResultMsg{err: fmt.Errorf("timed out (10s)")}
+							}
+						}
 					}
 				}
 			}

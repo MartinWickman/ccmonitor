@@ -146,7 +146,6 @@ cat > "$SESSION_DIR/$SID3.json" <<SESS
     "last_prompt": "",
     "notification_type": null,
     "last_activity": "$STALE_TIME",
-    "tmux_pane": "",
     "summary": ""
 }
 SESS
@@ -165,7 +164,6 @@ cat > "$SESSION_DIR/$SID4.json" <<SESS
     "last_prompt": "",
     "notification_type": null,
     "last_activity": "$FRESH_TIME",
-    "tmux_pane": "",
     "summary": ""
 }
 SESS

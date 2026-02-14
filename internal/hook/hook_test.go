@@ -170,13 +170,13 @@ func TestNotificationDetail(t *testing.T) {
 }
 
 func TestLoadExistingSession(t *testing.T) {
-	t.Run("existing file with last_prompt and runtime_id", func(t *testing.T) {
+	t.Run("existing file with last_prompt and terminals", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "test.json")
 		s := session.Session{
 			SessionID:  "test1",
 			LastPrompt: "do the thing",
-			RuntimeID:  "42,123,4,5",
+			Terminals:  []session.Terminal{{Backend: "wt", ID: "42,123,4,5"}},
 		}
 		data, _ := json.Marshal(s)
 		os.WriteFile(path, data, 0644)
@@ -185,8 +185,8 @@ func TestLoadExistingSession(t *testing.T) {
 		if got.LastPrompt != "do the thing" {
 			t.Errorf("last_prompt = %q, want %q", got.LastPrompt, "do the thing")
 		}
-		if got.RuntimeID != "42,123,4,5" {
-			t.Errorf("runtime_id = %q, want %q", got.RuntimeID, "42,123,4,5")
+		if got.FindTerminalID("wt") != "42,123,4,5" {
+			t.Errorf("wt terminal id = %q, want %q", got.FindTerminalID("wt"), "42,123,4,5")
 		}
 	})
 
@@ -195,8 +195,8 @@ func TestLoadExistingSession(t *testing.T) {
 		if got.LastPrompt != "" {
 			t.Errorf("last_prompt = %q, want empty", got.LastPrompt)
 		}
-		if got.RuntimeID != "" {
-			t.Errorf("runtime_id = %q, want empty", got.RuntimeID)
+		if len(got.Terminals) != 0 {
+			t.Errorf("terminals = %v, want empty", got.Terminals)
 		}
 	})
 
@@ -213,7 +213,7 @@ func TestLoadExistingSession(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
+	stubTermInfo := func(string, string, []session.Terminal) termInfo { return termInfo{} }
 	stubPidFn := func() int { return 42 }
 
 	t.Run("PreToolUse writes session file", func(t *testing.T) {
@@ -436,8 +436,11 @@ func TestRun(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		tmuxFn := func(string, string, string) termInfo {
-			return termInfo{tmuxPane: "%5", summary: "my project"}
+		tmuxFn := func(string, string, []session.Terminal) termInfo {
+			return termInfo{
+				terminals: []session.Terminal{{Backend: "tmux", ID: "%5"}},
+				summary:   "my project",
+			}
 		}
 		input := `{"session_id":"s8","cwd":"/tmp","hook_event_name":"Stop"}`
 		err := run(strings.NewReader(input), tmuxFn, stubPidFn)
@@ -448,21 +451,24 @@ func TestRun(t *testing.T) {
 		data, _ := os.ReadFile(filepath.Join(dir, "s8.json"))
 		var s session.Session
 		json.Unmarshal(data, &s)
-		if s.TmuxPane != "%5" {
-			t.Errorf("tmux_pane = %q, want %q", s.TmuxPane, "%5")
+		if s.FindTerminalID("tmux") != "%5" {
+			t.Errorf("tmux terminal id = %q, want %q", s.FindTerminalID("tmux"), "%5")
 		}
 		if s.Summary != "my project" {
 			t.Errorf("summary = %q, want %q", s.Summary, "my project")
 		}
 	})
 
-	t.Run("RuntimeID captured on SessionStart", func(t *testing.T) {
+	t.Run("WT terminal captured on SessionStart", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		wtFn := func(event, sid, existingRID string) termInfo {
+		wtFn := func(event, sid string, existing []session.Terminal) termInfo {
 			if event == "SessionStart" {
-				return termInfo{runtimeID: "42,17436612,4,279", summary: "Claude Code"}
+				return termInfo{
+					terminals: []session.Terminal{{Backend: "wt", ID: "42,17436612,4,279"}},
+					summary:   "Claude Code",
+				}
 			}
 			return termInfo{}
 		}
@@ -475,28 +481,28 @@ func TestRun(t *testing.T) {
 		data, _ := os.ReadFile(filepath.Join(dir, "s-wt.json"))
 		var s session.Session
 		json.Unmarshal(data, &s)
-		if s.RuntimeID != "42,17436612,4,279" {
-			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,17436612,4,279")
+		if s.FindTerminalID("wt") != "42,17436612,4,279" {
+			t.Errorf("wt terminal id = %q, want %q", s.FindTerminalID("wt"), "42,17436612,4,279")
 		}
 		if s.Status != "starting" {
 			t.Errorf("status = %q, want %q", s.Status, "starting")
 		}
 	})
 
-	t.Run("RuntimeID preserved from existing file on subsequent events", func(t *testing.T) {
+	t.Run("terminals preserved from existing file on subsequent events", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		// Write existing session with RuntimeID
+		// Write existing session with WT terminal
 		existing := session.Session{
 			SessionID:  "s-wt2",
-			RuntimeID:  "42,17436612,4,279",
+			Terminals:  []session.Terminal{{Backend: "wt", ID: "42,17436612,4,279"}},
 			LastPrompt: "do stuff",
 		}
 		data, _ := json.Marshal(existing)
 		os.WriteFile(filepath.Join(dir, "s-wt2.json"), data, 0644)
 
-		// Send a Stop event — RuntimeID should be preserved
+		// Send a Stop event — terminals should be preserved
 		input := `{"session_id":"s-wt2","cwd":"/tmp","hook_event_name":"Stop"}`
 		err := run(strings.NewReader(input), stubTermInfo, stubPidFn)
 		if err != nil {
@@ -506,8 +512,8 @@ func TestRun(t *testing.T) {
 		data, _ = os.ReadFile(filepath.Join(dir, "s-wt2.json"))
 		var s session.Session
 		json.Unmarshal(data, &s)
-		if s.RuntimeID != "42,17436612,4,279" {
-			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,17436612,4,279")
+		if s.FindTerminalID("wt") != "42,17436612,4,279" {
+			t.Errorf("wt terminal id = %q, want %q", s.FindTerminalID("wt"), "42,17436612,4,279")
 		}
 		if s.LastPrompt != "do stuff" {
 			t.Errorf("last_prompt = %q, want %q", s.LastPrompt, "do stuff")
@@ -518,9 +524,12 @@ func TestRun(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		wtFn := func(event, sid, existingRID string) termInfo {
+		wtFn := func(event, sid string, existing []session.Terminal) termInfo {
 			if event == "SessionStart" {
-				return termInfo{runtimeID: "42,100,4,1", summary: "Working on auth"}
+				return termInfo{
+					terminals: []session.Terminal{{Backend: "wt", ID: "42,100,4,1"}},
+					summary:   "Working on auth",
+				}
 			}
 			return termInfo{}
 		}
@@ -536,8 +545,8 @@ func TestRun(t *testing.T) {
 		if s.Summary != "Working on auth" {
 			t.Errorf("summary = %q, want %q", s.Summary, "Working on auth")
 		}
-		if s.RuntimeID != "42,100,4,1" {
-			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,100,4,1")
+		if s.FindTerminalID("wt") != "42,100,4,1" {
+			t.Errorf("wt terminal id = %q, want %q", s.FindTerminalID("wt"), "42,100,4,1")
 		}
 	})
 
@@ -545,18 +554,18 @@ func TestRun(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("CCMONITOR_SESSIONS_DIR", dir)
 
-		// Write existing session with RuntimeID
+		// Write existing session with WT terminal
 		existing := session.Session{
 			SessionID: "s-wt-title2",
-			RuntimeID: "42,100,4,2",
+			Terminals: []session.Terminal{{Backend: "wt", ID: "42,100,4,2"}},
 			Summary:   "Old title",
 		}
 		data, _ := json.Marshal(existing)
 		os.WriteFile(filepath.Join(dir, "s-wt-title2.json"), data, 0644)
 
-		// termInfoFn simulates looking up the new title using existingRID
-		wtFn := func(event, sid, existingRID string) termInfo {
-			if existingRID == "42,100,4,2" {
+		// termInfoFn simulates looking up the new title using existing terminals
+		wtFn := func(event, sid string, existingTerms []session.Terminal) termInfo {
+			if findID(existingTerms, "wt") == "42,100,4,2" {
 				return termInfo{summary: "Updated title"}
 			}
 			return termInfo{}
@@ -573,8 +582,8 @@ func TestRun(t *testing.T) {
 		if s.Summary != "Updated title" {
 			t.Errorf("summary = %q, want %q", s.Summary, "Updated title")
 		}
-		if s.RuntimeID != "42,100,4,2" {
-			t.Errorf("runtime_id = %q, want %q", s.RuntimeID, "42,100,4,2")
+		if s.FindTerminalID("wt") != "42,100,4,2" {
+			t.Errorf("wt terminal id = %q, want %q", s.FindTerminalID("wt"), "42,100,4,2")
 		}
 	})
 
@@ -805,7 +814,7 @@ func TestContinueResumeCleansStaleSessions(t *testing.T) {
 	data, _ := json.Marshal(stale)
 	os.WriteFile(filepath.Join(dir, "session-a.json"), data, 0644)
 
-	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
+	stubTermInfo := func(string, string, []session.Terminal) termInfo { return termInfo{} }
 	pidFn := func() int { return 42 }
 
 	// Fire a UserPromptSubmit with a different session ID but same PID
@@ -847,7 +856,7 @@ func TestSessionStartCleansSamePID(t *testing.T) {
 	data, _ := json.Marshal(old)
 	os.WriteFile(filepath.Join(dir, "old1.json"), data, 0644)
 
-	stubTermInfo := func(string, string, string) termInfo { return termInfo{} }
+	stubTermInfo := func(string, string, []session.Terminal) termInfo { return termInfo{} }
 	pidFn := func() int { return 42 }
 
 	input := `{"session_id":"new1","cwd":"/tmp","hook_event_name":"SessionStart"}`

@@ -19,20 +19,35 @@ const (
 	StatusExited   = "exited"
 )
 
+// Terminal identifies a terminal backend and its tab/pane ID.
+type Terminal struct {
+	Backend string `json:"backend"` // "tmux", "wt"
+	ID      string `json:"id"`      // pane ID or runtime ID
+}
+
 // Session represents the state of a single Claude Code instance.
 type Session struct {
-	SessionID        string  `json:"session_id"`
-	Project          string  `json:"project"`
-	Status           string  `json:"status"`
-	Detail           string  `json:"detail"`
-	LastPrompt       string  `json:"last_prompt"`
-	NotificationType *string `json:"notification_type"`
-	LastActivity     string  `json:"last_activity"`
-	TmuxPane         string  `json:"tmux_pane"`
-	Summary          string  `json:"summary"`
-	RuntimeID        string  `json:"wt_tab_id,omitempty"`
-	PID              int     `json:"pid,omitempty"`
-	OS               string  `json:"os,omitempty"`
+	SessionID        string     `json:"session_id"`
+	Project          string     `json:"project"`
+	Status           string     `json:"status"`
+	Detail           string     `json:"detail"`
+	LastPrompt       string     `json:"last_prompt"`
+	NotificationType *string    `json:"notification_type"`
+	LastActivity     string     `json:"last_activity"`
+	Terminals        []Terminal `json:"terminals,omitempty"`
+	Summary          string     `json:"summary"`
+	PID              int        `json:"pid,omitempty"`
+	OS               string     `json:"os,omitempty"`
+}
+
+// FindTerminalID returns the ID for the given backend name, or "" if not found.
+func (s Session) FindTerminalID(backend string) string {
+	for _, t := range s.Terminals {
+		if t.Backend == backend {
+			return t.ID
+		}
+	}
+	return ""
 }
 
 // ProjectGroup holds sessions belonging to the same project directory.

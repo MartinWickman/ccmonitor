@@ -3,9 +3,23 @@ package wt
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/martinwickman/ccmonitor/internal/terminal"
 )
+
+// Backend implements terminal.Backend for Windows Terminal tabs.
+type Backend struct{}
+
+var _ terminal.Backend = Backend{}
+
+// Name returns "wt".
+func (Backend) Name() string { return "wt" }
+
+// Available reports whether the current process is running inside Windows Terminal.
+func (Backend) Available() bool { return os.Getenv("WT_SESSION") != "" }
 
 // preamble loads UI Automation assemblies and finds all Windows Terminal windows.
 const preamble = `
@@ -24,11 +38,11 @@ func runPowerShell(script string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// TabInfo finds the currently selected tab in the foreground Windows Terminal
-// window. Returns both the RuntimeId and the raw tab name (caller should strip
-// any title prefix). Only meaningful during SessionStart, when the active tab
+// Info finds the currently selected tab in the foreground Windows Terminal
+// window. Returns both the RuntimeId and the tab name (with title prefix
+// stripped). Only meaningful during SessionStart, when the active tab
 // is the one where Claude Code just started.
-func TabInfo() (runtimeID, title string) {
+func (Backend) Info() (runtimeID, title string) {
 	script := preamble + `
 Add-Type -TypeDefinition @"
 using System;
@@ -68,13 +82,14 @@ foreach ($w in $wtWindows) {
 	if len(lines) > 1 {
 		title = strings.TrimSpace(lines[1])
 	}
+	title = terminal.StripTitlePrefix(title)
 	return runtimeID, title
 }
 
-// TabTitle looks up the current tab name for a Windows Terminal tab identified
-// by its RuntimeId. Returns the raw tab name (caller should strip any title
-// prefix). Returns empty string on error.
-func TabTitle(runtimeID string) string {
+// Title looks up the current tab name for a Windows Terminal tab identified
+// by its RuntimeId. Returns the tab name with title prefix stripped.
+// Returns empty string on error.
+func (Backend) Title(runtimeID string) string {
 	script := preamble + fmt.Sprintf(`
 $targetRid = @(%s)
 foreach ($w in $wtWindows) {
@@ -93,11 +108,11 @@ foreach ($w in $wtWindows) {
 	if err != nil {
 		return ""
 	}
-	return out
+	return terminal.StripTitlePrefix(out)
 }
 
-// SelectTab switches to a Windows Terminal tab identified by its RuntimeId.
-func SelectTab(runtimeID string) error {
+// Select switches to a Windows Terminal tab identified by its RuntimeId.
+func (Backend) Select(runtimeID string) error {
 	script := preamble + fmt.Sprintf(`
 $targetRid = @(%s)
 foreach ($w in $wtWindows) {

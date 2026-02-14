@@ -2,27 +2,33 @@ package switcher
 
 import (
 	"fmt"
-	"os/exec"
 
 	"github.com/martinwickman/ccmonitor/internal/session"
+	"github.com/martinwickman/ccmonitor/internal/terminal"
+	"github.com/martinwickman/ccmonitor/internal/tmux"
 	"github.com/martinwickman/ccmonitor/internal/wt"
 )
 
+var backends = map[string]terminal.Backend{
+	"wt":   wt.Backend{},
+	"tmux": tmux.Backend{},
+}
+
 // Switch focuses the terminal tab/pane for the given session.
-// When both WT tab and tmux pane are available (tmux inside WT),
-// it switches the WT tab first, then the tmux pane.
+// Iterates over s.Terminals in order — the hook adds WT first, tmux second,
+// so the outer tab is switched before the inner pane.
 func Switch(s session.Session) error {
-	if s.RuntimeID != "" && s.TmuxPane != "" {
-		if err := wt.SelectTab(s.RuntimeID); err != nil {
+	if len(s.Terminals) == 0 {
+		return fmt.Errorf("no switching info available")
+	}
+	for _, t := range s.Terminals {
+		b, ok := backends[t.Backend]
+		if !ok {
+			continue
+		}
+		if err := b.Select(t.ID); err != nil {
 			return err
 		}
-		return exec.Command("tmux", "select-pane", "-t", s.TmuxPane).Run()
 	}
-	if s.RuntimeID != "" {
-		return wt.SelectTab(s.RuntimeID)
-	}
-	if s.TmuxPane != "" {
-		return exec.Command("tmux", "select-pane", "-t", s.TmuxPane).Run()
-	}
-	return fmt.Errorf("no switching info available")
+	return nil
 }

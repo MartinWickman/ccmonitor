@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
-	"unicode"
 
 	ps "github.com/mitchellh/go-ps"
 
 	"github.com/martinwickman/ccmonitor/internal/session"
+	"github.com/martinwickman/ccmonitor/internal/terminal"
+	"github.com/martinwickman/ccmonitor/internal/tmux"
 	"github.com/martinwickman/ccmonitor/internal/wt"
 )
 
@@ -145,56 +144,46 @@ func notificationDetail(notifType, title, message string) string {
 	return "Awaiting response"
 }
 
-// stripTitlePrefix removes leading non-alphanumeric characters from a tab/pane
-// title. Claude Code prefixes titles with status indicators like "✳ " but the
-// exact character varies by platform and encoding.
-func stripTitlePrefix(title string) string {
-	i := strings.IndexFunc(title, func(r rune) bool {
-		return unicode.IsLetter(r) || unicode.IsDigit(r)
-	})
-	if i > 0 {
-		return title[i:]
-	}
-	return title
-}
-
 // termInfo holds terminal environment info collected once per hook invocation.
 type termInfo struct {
-	tmuxPane  string
+	terminals []session.Terminal
 	summary   string
-	runtimeID string
 }
 
-func tmuxInfo() (pane, title string) {
-	pane = os.Getenv("TMUX_PANE")
-	if pane == "" {
-		return "", ""
+// findID returns the ID for the given backend name in a Terminal slice.
+func findID(terminals []session.Terminal, backend string) string {
+	for _, t := range terminals {
+		if t.Backend == backend {
+			return t.ID
+		}
 	}
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", pane, "#{pane_title}").Output()
-	if err != nil {
-		return pane, ""
-	}
-	title = strings.TrimSpace(string(out))
-	title = stripTitlePrefix(title)
-	return pane, title
+	return ""
 }
 
 // defaultTermInfo returns terminal info based on the current environment.
-// Captures both tmux and WT info when both are available (tmux inside WT).
-// WT is checked first, then tmux — when both are present, tmux title is
-// preferred since it's more specific (inner pane vs outer tab).
-func defaultTermInfo(hookEvent, sessionID, existingRuntimeID string) termInfo {
+// Iterates over available backends (WT first, then tmux). When both are
+// present, tmux title wins since it's more specific (inner pane vs outer tab).
+func defaultTermInfo(hookEvent, sessionID string, existingTerminals []session.Terminal) termInfo {
+	backends := []terminal.Backend{wt.Backend{}, tmux.Backend{}}
 	var ti termInfo
-	if os.Getenv("WT_SESSION") != "" {
-		if hookEvent == EventSessionStart || existingRuntimeID == "" {
-			ti.runtimeID, ti.summary = wt.TabInfo()
-		} else {
-			ti.summary = wt.TabTitle(existingRuntimeID)
+	for _, b := range backends {
+		if !b.Available() {
+			continue
 		}
-		ti.summary = stripTitlePrefix(ti.summary)
-	}
-	if os.Getenv("TMUX_PANE") != "" {
-		ti.tmuxPane, ti.summary = tmuxInfo()
+		existingID := findID(existingTerminals, b.Name())
+		var id, title string
+		if hookEvent == EventSessionStart || existingID == "" {
+			id, title = b.Info()
+		} else {
+			id = existingID
+			title = b.Title(existingID)
+		}
+		if id != "" {
+			ti.terminals = append(ti.terminals, session.Terminal{Backend: b.Name(), ID: id})
+		}
+		if title != "" {
+			ti.summary = title // last wins — tmux after WT, so tmux preferred
+		}
 	}
 	return ti
 }
@@ -280,7 +269,7 @@ func Run() error {
 	return run(os.Stdin, defaultTermInfo, findParentPID)
 }
 
-func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidFn func() int) error {
+func run(stdin io.Reader, termInfoFn func(string, string, []session.Terminal) termInfo, pidFn func() int) error {
 	dir := session.Dir()
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating sessions dir: %w", err)
@@ -336,12 +325,12 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 	}
 
 	// Get terminal info (tmux pane, WT runtime ID, and/or tab title)
-	ti := termInfoFn(input.HookEventName, input.SessionID, existing.RuntimeID)
+	ti := termInfoFn(input.HookEventName, input.SessionID, existing.Terminals)
 
-	// Preserve RuntimeID and summary from existing session on non-SessionStart events
-	runtimeID := ti.runtimeID
-	if runtimeID == "" && input.HookEventName != EventSessionStart {
-		runtimeID = existing.RuntimeID
+	// Preserve terminals and summary from existing session on non-SessionStart events
+	terminals := ti.terminals
+	if len(terminals) == 0 && input.HookEventName != EventSessionStart {
+		terminals = existing.Terminals
 	}
 	summary := ti.summary
 	if summary == "" && input.HookEventName != EventSessionStart {
@@ -368,9 +357,8 @@ func run(stdin io.Reader, termInfoFn func(string, string, string) termInfo, pidF
 		LastPrompt:       lastPrompt,
 		NotificationType: notifType,
 		LastActivity:     time.Now().UTC().Format(time.RFC3339),
-		TmuxPane:         ti.tmuxPane,
+		Terminals:        terminals,
 		Summary:          summary,
-		RuntimeID:        runtimeID,
 		PID:              pid,
 		OS:               runtime.GOOS,
 	}
