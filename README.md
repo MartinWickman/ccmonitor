@@ -5,15 +5,13 @@
 </div>
 
 
-`ccmonitor` shows what every CC instance is doing *right now*.
-
-Less hunting for correct terminal tab...
+`ccmonitor` shows progress of all Claude sessions. Click to jump to the correct tab/terminal.
 
 ![](recording.gif)
 
-- Shows all sessions at a glance, grouped by project
+- Displays all sessions at a glance, grouped by project (directory)
 - Shows which Claude sessions are working, waiting for input, or just idling
-- It also shows your latest prompt (or summary) for each session
+- Displays the latest prompt (or summary)
 - Click to jump to the right tmux pane or Windows Terminal tab
 
 # Install
