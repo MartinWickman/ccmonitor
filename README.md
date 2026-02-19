@@ -1,20 +1,27 @@
 <div align="center">
   <img src="icon.svg" width="130px" alt="GitHub Readme Stats" />
   <h1 style="font-size: 28px; margin: 10px 0;">Claude Code Monitor</h1>
-  <p>A terminal dashboard for Claude Code sessions!</p>
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blueviolet)](https://github.com/swingerman/atdd)
+  
+  <p>A terminal dashboard for Claude Code sessions</p>
+   <h1 style="font-size: 28px; margin: 10px 0;"></h1>
 </div>
 
 
-`ccmonitor` shows what every CC instance is doing *right now*.
+`ccmonitor` shows progress of all running cc sessions.
 
-Less hunting for correct terminal tab...
 
-![](recording.gif)
-
-- Shows all sessions at a glance, grouped by project
-- Shows which Claude sessions are working, waiting for input, or just idling
-- It also shows your latest prompt (or summary) for each session
+- Displays all sessions at a glance, grouped by project (directory)
 - Click to jump to the right tmux pane or Windows Terminal tab
+- Shows which Claude sessions are working, waiting for input, or just idling
+- Displays the latest prompt (or summary)
+
+<div align="left">
+<img src="recording.gif" width=70% height=70%>
+</div>
+
 
 # Install
 
