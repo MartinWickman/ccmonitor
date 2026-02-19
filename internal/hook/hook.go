@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	ps "github.com/mitchellh/go-ps"
@@ -206,23 +207,44 @@ func writeSessionFile(path string, s session.Session) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// findParentPID walks up from our parent to find the grandparent PID (Claude Code).
-// Hooks are spawned as: Claude Code → shell (/bin/sh -c) → ccmonitor hook.
+// isShellProcess returns true if the process name is a known shell.
+func isShellProcess(name string) bool {
+	name = strings.ToLower(name)
+	switch name {
+	case "bash", "bash.exe", "sh", "sh.exe", "dash", "dash.exe",
+		"zsh", "zsh.exe", "fish", "fish.exe":
+		return true
+	}
+	return false
+}
+
+// findParentPID walks up the process tree from our parent, skipping shell
+// processes (bash, sh, etc.), and returns the first non-shell ancestor's PID.
+// This handles varying process tree depths across environments:
+//   - WSL2:     Claude Code → sh → ccmonitor        (1 shell layer)
+//   - Git Bash: Claude Code → bash → bash → bash → ccmonitor  (3 shell layers)
+//
 // Returns 0 if the process tree cannot be walked.
 func findParentPID() int {
-	ppid := os.Getppid()
-	if ppid <= 0 {
+	pid := os.Getppid()
+	if pid <= 0 {
 		return 0
 	}
-	parent, err := ps.FindProcess(ppid)
-	if err != nil || parent == nil {
-		return 0
+	for range 20 { // safety limit
+		proc, err := ps.FindProcess(pid)
+		if err != nil || proc == nil {
+			return 0
+		}
+		if !isShellProcess(proc.Executable()) {
+			return pid
+		}
+		ppid := proc.PPid()
+		if ppid <= 0 || ppid == pid {
+			return pid // can't go higher, return what we have
+		}
+		pid = ppid
 	}
-	gpid := parent.PPid()
-	if gpid <= 0 {
-		return 0
-	}
-	return gpid
+	return pid
 }
 
 // cleanupSamePID removes session files that share a PID with the current session

@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -111,7 +112,7 @@ func TestBuildClickMap(t *testing.T) {
 func TestCheckPIDLiveness(t *testing.T) {
 	t.Run("dead PID sets status to exited", func(t *testing.T) {
 		sessions := []session.Session{
-			{SessionID: "s1", Status: "working", PID: 99999999},
+			{SessionID: "s1", Status: "working", PID: 99999999, OS: runtime.GOOS},
 		}
 		CheckPIDLiveness(sessions)
 		if sessions[0].Status != "exited" {
@@ -124,7 +125,7 @@ func TestCheckPIDLiveness(t *testing.T) {
 
 	t.Run("alive PID keeps original status", func(t *testing.T) {
 		sessions := []session.Session{
-			{SessionID: "s2", Status: "working", PID: os.Getpid()},
+			{SessionID: "s2", Status: "working", PID: os.Getpid(), OS: runtime.GOOS},
 		}
 		CheckPIDLiveness(sessions)
 		if sessions[0].Status != "working" {
